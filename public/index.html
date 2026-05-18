@@ -1,0 +1,270 @@
+<!doctype html>
+<html lang="ja">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="theme-color" content="#ef4f2f" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-title" content="Email AI" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+    <title>Email AI Gmail</title>
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <link rel="icon" href="/icons/icon.svg" type="image/svg+xml" />
+    <link rel="apple-touch-icon" href="/icons/icon.svg" />
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <main class="appFrame">
+      <header class="appHeader">
+        <div>
+          <h1>Email AI</h1>
+          <p id="connectionText">接続状態を確認しています</p>
+        </div>
+        <div class="headerActions">
+          <select id="accountSelect" title="メールアカウント"></select>
+          <button id="mobileShareButton" class="utilityButton">スマホで開く</button>
+          <a class="connectButton" href="/auth/google" id="addAccountButton">アカウント追加</a>
+          <button id="loadButton">同期</button>
+          <a class="connectButton" href="/auth/google" id="connectButton">Gmail接続</a>
+        </div>
+      </header>
+
+      <section class="mobileSharePanel hidden" id="mobileSharePanel">
+        <div>
+          <h2>スマホで開く</h2>
+          <p>同じWi-FiのスマホでQRコードを読み取ってください。</p>
+          <a id="mobileShareLink" href="#" target="_blank" rel="noreferrer"></a>
+        </div>
+        <img id="mobileShareQr" alt="スマホで開くQRコード" />
+      </section>
+
+      <section class="setupCard hidden" id="setupPanel">
+        <div class="sectionTop">
+          <div>
+            <h2>接続設定</h2>
+            <p>GmailとAI返信を使うための鍵を保存します。</p>
+          </div>
+          <button id="saveConfigButton">保存</button>
+        </div>
+        <div class="setupNote">
+          Google OAuthのリダイレクトURI:
+          <strong id="redirectUriText">http://localhost:8787/auth/google/callback</strong>
+        </div>
+        <div class="formGrid">
+          <label>
+            Google Client ID
+            <input id="googleClientId" autocomplete="off" />
+          </label>
+          <label>
+            Google Client Secret
+            <input id="googleClientSecret" autocomplete="off" type="password" />
+          </label>
+          <label>
+            OpenAI API Key
+            <input id="openAIKey" autocomplete="off" type="password" />
+          </label>
+          <label>
+            OpenAI Model
+            <input id="openAIModel" value="gpt-4o-mini" />
+          </label>
+        </div>
+      </section>
+
+      <section class="profileStrip">
+        <details>
+          <summary>あなたの情報</summary>
+          <div class="profileGrid">
+            <label>
+              名前
+              <input id="profileName" autocomplete="name" />
+            </label>
+            <label>
+              役割・肩書き
+              <input id="profileRole" />
+            </label>
+            <label>
+              会社・所属
+              <input id="profileCompany" />
+            </label>
+            <label>
+              返信で使う事実・背景
+              <textarea id="profileFacts" rows="3"></textarea>
+            </label>
+            <label>
+              文体ルール
+              <textarea id="profileTone" rows="3"></textarea>
+            </label>
+            <label>
+              署名
+              <textarea id="profileSignature" rows="3"></textarea>
+            </label>
+          </div>
+          <button id="saveProfileButton">保存</button>
+        </details>
+      </section>
+
+      <section class="controlShell">
+        <button id="controlToggleButton" class="controlToggleButton" aria-expanded="false" aria-controls="controlPanel">操作メニュー</button>
+        <div id="controlPanel" class="controlPanel">
+          <section class="toolbar">
+            <div class="folderTabs" aria-label="メールボックス">
+              <button class="folderButton active" data-tab="inbox" data-title="受信トレイ" data-query="in:inbox newer_than:30d">受信</button>
+              <button class="folderButton criticalTab" data-tab="important" data-title="最重要!" data-query="newer_than:90d (subject:重要 OR subject:至急 OR subject:締切 OR subject:期限 OR subject:面接 OR subject:選考 OR subject:適性検査 OR subject:WEBテスト OR subject:インターン OR from:saiyo OR from:recruit)">最重要!</button>
+              <button class="folderButton" data-tab="unread" data-title="未読" data-query="is:unread newer_than:30d">未読</button>
+              <button class="folderButton" data-tab="action" data-title="要対応候補" data-query="newer_than:30d (from:fudosan OR from:saiyo OR subject:締切 OR subject:ご案内 OR subject:お問い合わせ)">要対応</button>
+              <button class="folderButton" data-tab="housing" data-title="住まい" data-query="newer_than:30d (from:fudosan OR from:assist-jpn.com OR from:ttfuhan.co.jp)">住まい</button>
+              <button class="folderButton" data-tab="career" data-title="就活" data-query="newer_than:30d (from:saiyo OR from:onecareer.jp OR from:openwork.jp OR from:linkedin.com)">就活</button>
+            </div>
+            <div class="queryTools">
+              <input id="queryInput" value="in:inbox newer_than:30d" />
+              <select id="maxInput">
+                <option value="10">10件</option>
+                <option value="20">20件</option>
+                <option value="50" selected>50件</option>
+                <option value="500">500件</option>
+                <option value="year">今年</option>
+                <option value="all">すべて</option>
+              </select>
+            </div>
+          </section>
+
+          <section class="triageBar">
+            <button class="triageButton active" data-filter="all">すべて</button>
+            <button class="triageButton" data-filter="action">返信/対応</button>
+            <button class="triageButton" data-filter="notice">確認</button>
+            <button class="triageButton" data-filter="skip">通知</button>
+            <button id="scheduleButton" class="utilityButton">就活日程</button>
+            <button id="digestTodayButton" class="utilityButton">今日の要約</button>
+            <button id="digestWeekButton" class="utilityButton">今週の要約</button>
+            <button id="digestMonthButton" class="utilityButton">今月の要約</button>
+          </section>
+
+          <section class="aiCommandBar">
+            <input id="aiCommandInput" placeholder="例: 株式会社DoDoNPAのメールは全部重要度低い / 住まいタブ消して / 設定をリセット" />
+            <button id="aiCommandButton">反映</button>
+          </section>
+        </div>
+      </section>
+
+      <section class="workspace">
+        <aside class="messagePane">
+          <div class="paneTitle">
+            <h2 id="mailboxTitle">受信トレイ</h2>
+            <p id="mailboxSummary">メールを同期してください。</p>
+          </div>
+          <div id="setupGuide" class="setupGuide hidden">
+            <span class="guidePill">接続待ち</span>
+            <strong>Gmailをつなぐと、ここにメールが並びます。</strong>
+            <p>設定を保存してからGmail接続を押してください。入力中の内容は戻っても復元されます。</p>
+            <div class="guideActions">
+              <a class="connectButton" href="/?setup=google">設定を開く</a>
+              <a class="connectButton" href="/auth/google">Gmail接続</a>
+            </div>
+          </div>
+          <div id="messageList" class="messageList"></div>
+        </aside>
+
+        <article class="readPane">
+          <div id="emptyState" class="emptyState">
+            <h2>読むメールを選ぶ</h2>
+            <p>AIが返信/確認/通知に仕分けし、必要なメールだけ深く扱います。</p>
+          </div>
+
+          <div id="detailContent" class="mailDetail hidden">
+            <header class="mailHeader">
+              <span id="mailCategory" class="categoryPill">確認</span>
+              <h2 id="mailSubject"></h2>
+              <p id="mailMeta"></p>
+            </header>
+
+            <section class="mailSummaryStrip">
+              <div>
+                <span>重要度</span>
+                <strong id="importanceText">確認</strong>
+              </div>
+              <div>
+                <span>次の行動</span>
+                <strong id="nextActionText">読む</strong>
+              </div>
+              <button id="copySubjectButton" class="utilityButton">件名コピー</button>
+            </section>
+
+            <pre id="mailBody" class="mailBody"></pre>
+
+            <section class="aiPanel">
+              <div class="sectionTop">
+                <div>
+                  <h3>AI返信</h3>
+                  <p id="replyHint">返信が必要な時だけ、自然な下書きを作ります。</p>
+                </div>
+                <div class="buttonGroup">
+                  <button id="generateButton">作成</button>
+                  <button id="draftButton">下書き保存</button>
+                </div>
+              </div>
+
+              <div class="quickIntents" aria-label="返信方針">
+                <button data-intent="丁寧に返信。相手の依頼に答え、必要な次の行動を短く入れる。">標準</button>
+                <button data-intent="興味があると伝え、詳細情報や候補日を依頼する。">前向き</button>
+                <button data-intent="今回は見送る旨を、失礼なく簡潔に伝える。">辞退</button>
+                <button data-intent="不足情報を確認する。勝手に断定せず、質問を箇条書きにする。">確認</button>
+              </div>
+
+              <label>
+                返信方針
+                <textarea id="instructionInput" rows="3" placeholder="例: 希望条件を伝えて、内見可能な候補日を聞く"></textarea>
+              </label>
+
+              <textarea id="replyOutput" class="replyOutput" rows="12" placeholder="ここにAI返信の下書きが入ります。直接編集できます。"></textarea>
+
+              <details class="senderDrawer">
+                <summary>送信者メモ</summary>
+                <div class="senderGrid">
+                  <label>
+                    名前
+                    <input id="senderName" />
+                  </label>
+                  <label>
+                    関係性
+                    <input id="senderRelationship" placeholder="例: 不動産担当、採用担当、教授" />
+                  </label>
+                  <label>
+                    敬語レベル
+                    <select id="senderTone">
+                      <option>自然な敬語</option>
+                      <option>かなり丁寧</option>
+                      <option>親しみやすい</option>
+                      <option>短く実務的</option>
+                    </select>
+                  </label>
+                </div>
+                <label>
+                  相手に関する背景
+                  <textarea id="senderFacts" rows="3"></textarea>
+                </label>
+                <label>
+                  避けたい表現・注意点
+                  <textarea id="senderAvoid" rows="2"></textarea>
+                </label>
+                <button id="saveSenderButton">送信者メモを保存</button>
+              </details>
+            </section>
+          </div>
+
+          <div id="insightContent" class="insightDetail hidden">
+            <div class="sectionTop">
+              <div>
+                <h2 id="insightTitle">就活日程</h2>
+                <p id="insightMeta">メールから抽出しています。</p>
+              </div>
+            </div>
+            <div id="insightBody" class="insightBody"></div>
+          </div>
+        </article>
+      </section>
+    </main>
+
+    <div id="toast" class="toast hidden"></div>
+    <script src="/app.js"></script>
+  </body>
+</html>
