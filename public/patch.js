@@ -256,3 +256,73 @@
 
   if (localStorage.getItem(enabledKey) === "1") start();
 })();
+
+(() => {
+  const backupKey = "email-ai-gmail-session-backup";
+  const noticeKey = "email-ai-gmail-session-restored-at";
+
+  const fetchJson = async (path, options = {}) => {
+    const response = await fetch(path, {
+      ...options,
+      headers: {
+        "content-type": "application/json",
+        ...(options.headers || {})
+      }
+    });
+    const body = await response.json();
+    if (!response.ok) throw new Error(body.error || "Gmail接続の保持に失敗しました");
+    return body;
+  };
+
+  const notifyInApp = (message) => {
+    const toast = document.getElementById("toast");
+    if (!toast) return;
+    toast.textContent = message;
+    toast.classList.remove("hidden");
+    clearTimeout(window.__gmailKeepToastTimer);
+    window.__gmailKeepToastTimer = setTimeout(() => toast.classList.add("hidden"), 5200);
+  };
+
+  const saveBackup = async () => {
+    const body = await fetchJson("/api/session/backup");
+    if (body.backup?.google?.tokens) {
+      localStorage.setItem(backupKey, JSON.stringify(body.backup));
+    }
+  };
+
+  const restoreBackup = async () => {
+    const raw = localStorage.getItem(backupKey);
+    if (!raw) return false;
+    const status = await fetchJson("/api/status");
+    if (status.gmailConnected) {
+      await saveBackup();
+      return false;
+    }
+
+    const backup = JSON.parse(raw);
+    await fetchJson("/api/session/restore", {
+      method: "POST",
+      body: JSON.stringify({ backup })
+    });
+    localStorage.setItem(noticeKey, new Date().toISOString());
+    notifyInApp("保存済みのGmail接続を復元しました。");
+    if (typeof window.loadStatus === "function") await window.loadStatus();
+    if (typeof window.loadMessages === "function") await window.loadMessages();
+    return true;
+  };
+
+  const run = async () => {
+    try {
+      const restored = await restoreBackup();
+      if (!restored) await saveBackup();
+    } catch {
+      // If the backup is old or revoked, the normal Gmail connection button remains available.
+    }
+  };
+
+  window.addEventListener("load", run);
+  document.addEventListener("visibilitychange", () => {
+    if (!document.hidden) run();
+  });
+  setInterval(run, 5 * 60 * 1000);
+})();
