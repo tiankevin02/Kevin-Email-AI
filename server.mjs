@@ -10,6 +10,7 @@ const env = loadEnv(path.join(__dirname, ".env"));
 const publicDir = path.join(__dirname, "public");
 const dataDir = env.DATA_DIR || path.join(__dirname, "data");
 const dataFile = path.join(dataDir, "app.json");
+const sessionsDir = path.join(dataDir, "sessions");
 const port = Number(env.PORT || process.env.PORT || 8787);
 const host = env.HOST || process.env.HOST || "127.0.0.1";
 
@@ -68,22 +69,115 @@ function requireFs(file) {
   return readFileSync(file, "utf8");
 }
 
-async function readState() {
+function parseCookies(req) {
+  return Object.fromEntries(
+    String(req.headers.cookie || "")
+      .split(";")
+      .map((part) => part.trim())
+      .filter(Boolean)
+      .map((part) => {
+        const index = part.indexOf("=");
+        return index === -1 ? [part, ""] : [part.slice(0, index), decodeURIComponent(part.slice(index + 1))];
+      })
+  );
+}
+
+function getSessionId(req, res) {
+  const cookies = parseCookies(req);
+  const existing = /^[a-f0-9]{32}$/.test(cookies.email_ai_session || "") ? cookies.email_ai_session : "";
+  const sessionId = existing || crypto.randomBytes(16).toString("hex");
+  if (!existing) {
+    const secure = publicOrigin(req).startsWith("https://") ? "; Secure" : "";
+    res.setHeader("set-cookie", `email_ai_session=${sessionId}; Path=/; HttpOnly; SameSite=Lax; Max-Age=31536000${secure}`);
+  }
+  return sessionId;
+}
+
+function sessionFile(sessionId) {
+  return path.join(sessionsDir, `${sessionId}.json`);
+}
+
+async function readGlobalState() {
   try {
     const parsed = JSON.parse(await fs.readFile(dataFile, "utf8"));
-    return mergeState(defaultState, parsed);
+    if (!hasConnectionData(parsed)) {
+      const recovered = await recoverStateFromBackup();
+      if (recovered) {
+        return mergeState(defaultState, {
+          config: recovered.config || {},
+          profile: recovered.profile || {}
+        });
+      }
+    }
+    return mergeState(defaultState, {
+      config: parsed.config || {},
+      profile: parsed.profile || {}
+    });
   } catch {
     await fs.mkdir(path.dirname(dataFile), { recursive: true });
-    await writeState(defaultState);
+    const recovered = await recoverStateFromBackup();
+    if (recovered) {
+      return mergeState(defaultState, {
+        config: recovered.config || {},
+        profile: recovered.profile || {}
+      });
+    }
+    await fs.writeFile(dataFile, `${JSON.stringify(defaultState, null, 2)}\n`);
     return structuredClone(defaultState);
   }
 }
 
+async function readState(req, res) {
+  const sessionId = getSessionId(req, res);
+  const globalState = await readGlobalState();
+  let parsed = {};
+  try {
+    parsed = JSON.parse(await fs.readFile(sessionFile(sessionId), "utf8"));
+  } catch {
+    parsed = {};
+  }
+  const state = mergeState({ ...defaultState, config: globalState.config }, parsed);
+  Object.defineProperty(state, "__sessionId", { value: sessionId, enumerable: false });
+  return state;
+}
+
+function hasConnectionData(state) {
+  return Boolean(
+    state?.google?.tokens ||
+      Object.keys(state?.google?.accounts || {}).length ||
+      state?.config?.googleClientId ||
+      state?.config?.googleClientSecret ||
+      state?.config?.openAIKey
+  );
+}
+
+async function recoverStateFromBackup() {
+  try {
+    await fs.mkdir(path.dirname(dataFile), { recursive: true });
+    const files = (await fs.readdir(path.dirname(dataFile)))
+      .filter((file) => /^app\..+\.bak\.json$/.test(file))
+      .sort()
+      .reverse();
+    for (const file of files) {
+      try {
+        const candidate = JSON.parse(await fs.readFile(path.join(path.dirname(dataFile), file), "utf8"));
+        if (hasConnectionData(candidate)) return candidate;
+      } catch {
+        // Try the next backup.
+      }
+    }
+  } catch {
+    // No backups available.
+  }
+  return null;
+}
+
 async function writeState(state) {
-  await fs.mkdir(path.dirname(dataFile), { recursive: true });
+  const targetFile = state.__sessionId ? sessionFile(state.__sessionId) : dataFile;
+  await fs.mkdir(path.dirname(targetFile), { recursive: true });
   let current = null;
   try {
-    current = JSON.parse(await fs.readFile(dataFile, "utf8"));
+    current = JSON.parse(await fs.readFile(targetFile, "utf8"));
     const hasSavedSecrets =
       current?.google?.tokens ||
       Object.keys(current?.google?.accounts || {}).length ||
@@ -91,7 +185,7 @@ async function writeState(state) {
       current?.config?.googleClientSecret ||
       current?.config?.openAIKey;
     if (hasSavedSecrets) {
-      const backupFile = path.join(path.dirname(dataFile), `app.${new Date().toISOString().replace(/[:.]/g, "-")}.bak.json`);
+      const backupFile = path.join(path.dirname(targetFile), `app.${new Date().toISOString().replace(/[:.]/g, "-")}.bak.json`);
       await fs.writeFile(backupFile, `${JSON.stringify(current, null, 2)}\n`);
     }
   } catch {
@@ -121,7 +215,7 @@ async function writeState(state) {
     throw err;
   }
 
-  await fs.writeFile(dataFile, `${JSON.stringify(state, null, 2)}\n`);
+  await fs.writeFile(targetFile, `${JSON.stringify(state, null, 2)}\n`);
 }
 
 function mergeState(base, next) {
@@ -323,6 +417,10 @@ function withActiveAccount(state, email) {
 
 async function gmailFetch(state, url, options = {}) {
   const accessToken = await getFreshGoogleToken(state);
+  return gmailFetchWithToken(accessToken, url, options);
+}
+
+async function gmailFetchWithToken(accessToken, url, options = {}) {
   const response = await fetch(`https://gmail.googleapis.com/gmail/v1/users/me${url}`, {
     ...options,
     headers: {
@@ -766,7 +864,7 @@ function draftRaw({ to, cc, subject, body, inReplyTo }) {
 
 async function route(req, res) {
   const url = new URL(req.url, `http://localhost:${port}`);
-  const state = await readState();
+  const state = await readState(req, res);
 
   try {
     if (req.method === "GET" && url.pathname === "/healthz") {
@@ -777,12 +875,18 @@ async function route(req, res) {
     if (req.method === "GET" && url.pathname === "/api/status") {
       activeAccount(state);
       await writeState(state);
-      sendJson(res, 200, {
-        googleConfigured: configuredGoogle(state),
-        openAIConfigured: configuredOpenAI(state),
-        configFromEnv: {
-          google: Boolean(env.GOOGLE_CLIENT_ID && env.GOOGLE_CLIENT_SECRET),
-          openAI: Boolean(env.OPENAI_API_KEY)
+        sendJson(res, 200, {
+          googleConfigured: configuredGoogle(state),
+          openAIConfigured: configuredOpenAI(state),
+          savedConfig: {
+            googleClientId: Boolean(state.config.googleClientId),
+            googleClientSecret: Boolean(state.config.googleClientSecret),
+            openAIKey: Boolean(state.config.openAIKey),
+            openAIModel: state.config.openAIModel || "gpt-4o-mini"
+          },
+          configFromEnv: {
+            google: Boolean(env.GOOGLE_CLIENT_ID && env.GOOGLE_CLIENT_SECRET),
+            openAI: Boolean(env.OPENAI_API_KEY)
         },
         gmailConnected: Boolean(state.google.tokens),
         email: state.google.email,
@@ -816,12 +920,28 @@ async function route(req, res) {
 
     if (req.method === "POST" && url.pathname === "/api/config") {
       const body = await parseBody(req);
-      state.config = {
+      const nextConfig = {
         ...state.config,
         googleClientId: body.googleClientId || state.config.googleClientId || "",
         googleClientSecret: body.googleClientSecret || state.config.googleClientSecret || "",
         openAIKey: body.openAIKey || state.config.openAIKey || "",
         openAIModel: body.openAIModel || state.config.openAIModel || "gpt-4o-mini"
+      };
+      if (
+        hasConnectionData(state) &&
+        !body.googleClientId &&
+        !body.googleClientSecret &&
+        !body.openAIKey &&
+        !nextConfig.googleClientId &&
+        !nextConfig.googleClientSecret &&
+        !nextConfig.openAIKey
+      ) {
+        const err = new Error("保存済みの接続設定を空欄で上書きしそうになったため、保存を止めました。");
+        err.status = 409;
+        throw err;
+      }
+      state.config = {
+        ...nextConfig
       };
       await writeState(state);
       sendJson(res, 200, {
@@ -916,7 +1036,7 @@ async function route(req, res) {
         ...tokens,
         expires_at: Date.now() + (tokens.expires_in || 3600) * 1000
       };
-      const profile = await gmailFetch({ ...state, google: { ...state.google, tokens: accountTokens } }, "/profile");
+      const profile = await gmailFetchWithToken(accountTokens.access_token, "/profile");
       const email = profile.emailAddress;
       state.google.accounts = {
         ...(state.google.accounts || {}),
