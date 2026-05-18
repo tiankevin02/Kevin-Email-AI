@@ -22,7 +22,7 @@ services:
         sync: false
       - key: OPENAI_MODEL
         value: gpt-4o-mini
-    disks:
-      - name: email-ai-data
-        mountPath: /var/data
-        sizeGB: 1
+    disk:
+      name: email-ai-data
+      mountPath: /var/data
+      sizeGB: 1
