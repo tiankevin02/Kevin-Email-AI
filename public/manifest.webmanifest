@@ -1,0 +1,31 @@
+{
+  "name": "Email AI",
+  "short_name": "Email AI",
+  "description": "Gmailを読み込み、AI返信、重要メール、就活日程を整理するメールアプリ。",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#fbfaf8",
+  "theme_color": "#ef4f2f",
+  "icons": [
+    {
+      "src": "/icons/icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ],
+  "shortcuts": [
+    {
+      "name": "受信トレイ",
+      "url": "/",
+      "description": "メールを確認"
+    },
+    {
+      "name": "接続設定",
+      "url": "/?setup=google",
+      "description": "GmailとAIの設定"
+    }
+  ]
+}
