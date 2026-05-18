@@ -1,0 +1,1104 @@
+import http from "node:http";
+import fs from "node:fs/promises";
+import { readFileSync } from "node:fs";
+import path from "node:path";
+import crypto from "node:crypto";
+import { fileURLToPath } from "node:url";
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const env = loadEnv(path.join(__dirname, ".env"));
+const publicDir = path.join(__dirname, "public");
+const dataDir = env.DATA_DIR || path.join(__dirname, "data");
+const dataFile = path.join(dataDir, "app.json");
+const port = Number(env.PORT || process.env.PORT || 8787);
+const host = env.HOST || process.env.HOST || "127.0.0.1";
+
+const gmailScopes = ["https://www.googleapis.com/auth/gmail.modify"];
+
+const defaultState = {
+  profile: {
+    name: "",
+    role: "",
+    company: "",
+    signature: "",
+    facts: "",
+    tone: "丁寧、自然、短すぎず長すぎず。相手の文脈に具体的に触れる。"
+  },
+  senders: {},
+  google: {
+    tokens: null,
+    email: null,
+    accounts: {},
+    activeEmail: null,
+    oauthState: null
+  },
+  config: {
+    googleClientId: "",
+    googleClientSecret: "",
+    openAIKey: "",
+    openAIModel: "gpt-4o-mini",
+    geminiApiKey: "",
+    geminiModel: "gemini-2.5-flash",
+    grokApiKey: "",
+    grokModel: "grok-4"
+  }
+};
+
+function loadEnv(file) {
+  const values = {};
+  try {
+    const text = requireFs(file);
+    for (const line of text.split(/\r?\n/)) {
+      const trimmed = line.trim();
+      if (!trimmed || trimmed.startsWith("#")) continue;
+      const index = trimmed.indexOf("=");
+      if (index === -1) continue;
+      const key = trimmed.slice(0, index).trim();
+      const value = trimmed.slice(index + 1).trim().replace(/^["']|["']$/g, "");
+      values[key] = value;
+      if (!process.env[key]) process.env[key] = value;
+    }
+  } catch {
+    // .env is optional; environment variables also work.
+  }
+  return { ...process.env, ...values };
+}
+
+function requireFs(file) {
+  return readFileSync(file, "utf8");
+}
+
+async function readState() {
+  try {
+    const parsed = JSON.parse(await fs.readFile(dataFile, "utf8"));
+    return mergeState(defaultState, parsed);
+  } catch {
+    await fs.mkdir(path.dirname(dataFile), { recursive: true });
+    await writeState(defaultState);
+    return structuredClone(defaultState);
+  }
+}
+
+async function writeState(state) {
+  await fs.mkdir(path.dirname(dataFile), { recursive: true });
+  let current = null;
+  try {
+    current = JSON.parse(await fs.readFile(dataFile, "utf8"));
+    const hasSavedSecrets =
+      current?.google?.tokens ||
+      Object.keys(current?.google?.accounts || {}).length ||
+      current?.config?.googleClientId ||
+      current?.config?.googleClientSecret ||
+      current?.config?.openAIKey;
+    if (hasSavedSecrets) {
+      const backupFile = path.join(path.dirname(dataFile), `app.${new Date().toISOString().replace(/[:.]/g, "-")}.bak.json`);
+      await fs.writeFile(backupFile, `${JSON.stringify(current, null, 2)}\n`);
+    }
+  } catch {
+    // No previous state to back up yet.
+  }
+
+  const currentHasConnection =
+    current?.google?.tokens ||
+    Object.keys(current?.google?.accounts || {}).length ||
+    current?.config?.googleClientId ||
+    current?.config?.googleClientSecret ||
+    current?.config?.openAIKey;
+  const nextHasConnection =
+    state?.google?.tokens ||
+    Object.keys(state?.google?.accounts || {}).length ||
+    state?.config?.googleClientId ||
+    state?.config?.googleClientSecret ||
+    state?.config?.openAIKey;
+  const preservingOauthProgress =
+    current?.config?.googleClientId &&
+    state?.config?.googleClientId === current.config.googleClientId &&
+    state?.config?.googleClientSecret === current.config.googleClientSecret &&
+    state?.google?.oauthState;
+  if (currentHasConnection && !nextHasConnection && !preservingOauthProgress) {
+    const err = new Error("保存済みの接続情報を空データで上書きしそうになったため、保存を止めました。");
+    err.status = 409;
+    throw err;
+  }
+
+  await fs.writeFile(dataFile, `${JSON.stringify(state, null, 2)}\n`);
+}
+
+function mergeState(base, next) {
+  const google = { ...base.google, ...(next.google || {}) };
+  if (google.email && google.tokens && !google.accounts?.[google.email]) {
+    google.accounts = {
+      ...(google.accounts || {}),
+      [google.email]: {
+        email: google.email,
+        tokens: google.tokens,
+        connectedAt: new Date().toISOString()
+      }
+    };
+    google.activeEmail = google.activeEmail || google.email;
+  }
+  return {
+    ...base,
+    ...next,
+    profile: { ...base.profile, ...(next.profile || {}) },
+    senders: { ...(next.senders || {}) },
+    google,
+    config: { ...base.config, ...(next.config || {}) }
+  };
+}
+
+function sendJson(res, status, body) {
+  const text = JSON.stringify(body);
+  res.writeHead(status, {
+    "content-type": "application/json; charset=utf-8",
+    "cache-control": "no-store"
+  });
+  res.end(text);
+}
+
+function sendText(res, status, text, type = "text/plain; charset=utf-8") {
+  res.writeHead(status, { "content-type": type, "cache-control": "no-store" });
+  res.end(text);
+}
+
+async function parseBody(req) {
+  const chunks = [];
+  for await (const chunk of req) chunks.push(chunk);
+  const text = Buffer.concat(chunks).toString("utf8");
+  return text ? JSON.parse(text) : {};
+}
+
+function googleConfig(state) {
+  return {
+    clientId: env.GOOGLE_CLIENT_ID || state.config.googleClientId,
+    clientSecret: env.GOOGLE_CLIENT_SECRET || state.config.googleClientSecret
+  };
+}
+
+function openAIConfig(state) {
+  return {
+    key: env.OPENAI_API_KEY || state.config.openAIKey,
+    model: env.OPENAI_MODEL || state.config.openAIModel || "gpt-4o-mini"
+  };
+}
+
+function geminiConfig(state) {
+  return {
+    key: env.GEMINI_API_KEY || state.config.geminiApiKey,
+    model: env.GEMINI_MODEL || state.config.geminiModel || "gemini-2.5-flash"
+  };
+}
+
+function grokConfig(state) {
+  return {
+    key: env.GROK_API_KEY || env.XAI_API_KEY || state.config.grokApiKey,
+    model: env.GROK_MODEL || env.XAI_MODEL || state.config.grokModel || "grok-4"
+  };
+}
+
+function configuredGoogle(state) {
+  const config = googleConfig(state);
+  return Boolean(config.clientId && config.clientSecret);
+}
+
+function configuredOpenAI(state) {
+  return Boolean(openAIConfig(state).key);
+}
+
+function configuredGemini(state) {
+  return Boolean(geminiConfig(state).key);
+}
+
+function configuredGrok(state) {
+  return Boolean(grokConfig(state).key);
+}
+
+function configuredAI(state) {
+  return configuredOpenAI(state) || configuredGemini(state) || configuredGrok(state);
+}
+
+function redirect(res, location) {
+  res.writeHead(302, { location });
+  res.end();
+}
+
+function publicOrigin(req) {
+  const hostHeader = req.headers.host || `localhost:${port}`;
+  const forwardedProto = String(req.headers["x-forwarded-proto"] || "").split(",")[0].trim();
+  const proto = forwardedProto || (hostHeader.startsWith("localhost") || hostHeader.startsWith("127.0.0.1") ? "http" : "https");
+  return `${proto}://${hostHeader}`;
+}
+
+async function getFreshGoogleToken(state) {
+  const account = activeAccount(state);
+  const tokens = account?.tokens;
+  if (!tokens?.access_token) {
+    const err = new Error("Gmailに接続してください。");
+    err.status = 401;
+    throw err;
+  }
+
+  if (tokens.expires_at && Date.now() < tokens.expires_at - 60_000) {
+    return tokens.access_token;
+  }
+
+  if (!tokens.refresh_token) return tokens.access_token;
+
+  const params = new URLSearchParams({
+    client_id: googleConfig(state).clientId,
+    client_secret: googleConfig(state).clientSecret,
+    refresh_token: tokens.refresh_token,
+    grant_type: "refresh_token"
+  });
+
+  const response = await fetch("https://oauth2.googleapis.com/token", {
+    method: "POST",
+    headers: { "content-type": "application/x-www-form-urlencoded" },
+    body: params
+  });
+  const body = await response.json();
+  if (!response.ok) throw new Error(body.error_description || body.error || "Google token refresh failed");
+
+  account.tokens = {
+    ...tokens,
+    ...body,
+    refresh_token: tokens.refresh_token,
+    expires_at: Date.now() + (body.expires_in || 3600) * 1000
+  };
+  state.google.tokens = account.tokens;
+  await writeState(state);
+  return account.tokens.access_token;
+}
+
+function accountsList(state) {
+  const accounts = state.google.accounts || {};
+  return Object.values(accounts).map((account) => ({
+    email: account.email,
+    connectedAt: account.connectedAt || null,
+    active: account.email === state.google.activeEmail
+  }));
+}
+
+function activeAccount(state) {
+  const accounts = state.google.accounts || {};
+  const email = state.google.activeEmail || state.google.email || Object.keys(accounts)[0];
+  if (email && accounts[email]) {
+    state.google.activeEmail = email;
+    state.google.email = email;
+    state.google.tokens = accounts[email].tokens;
+    return accounts[email];
+  }
+  if (state.google.tokens && state.google.email) {
+    accounts[state.google.email] = {
+      email: state.google.email,
+      tokens: state.google.tokens,
+      connectedAt: new Date().toISOString()
+    };
+    state.google.accounts = accounts;
+    state.google.activeEmail = state.google.email;
+    return accounts[state.google.email];
+  }
+  return null;
+}
+
+function withActiveAccount(state, email) {
+  if (!email || email === "active") return state;
+  const account = state.google.accounts?.[email];
+  if (!account) {
+    const err = new Error(`${email} は接続されていません。`);
+    err.status = 404;
+    throw err;
+  }
+  return {
+    ...state,
+    google: {
+      ...state.google,
+      email,
+      activeEmail: email,
+      tokens: account.tokens,
+      accounts: state.google.accounts
+    }
+  };
+}
+
+async function gmailFetch(state, url, options = {}) {
+  const accessToken = await getFreshGoogleToken(state);
+  const response = await fetch(`https://gmail.googleapis.com/gmail/v1/users/me${url}`, {
+    ...options,
+    headers: {
+      authorization: `Bearer ${accessToken}`,
+      "content-type": "application/json",
+      ...(options.headers || {})
+    }
+  });
+  const text = await response.text();
+  const body = text ? JSON.parse(text) : {};
+  if (!response.ok) {
+    const err = new Error(body.error?.message || "Gmail API request failed");
+    err.status = response.status;
+    throw err;
+  }
+  return body;
+}
+
+function header(message, name) {
+  const found = message.payload?.headers?.find((item) => item.name.toLowerCase() === name.toLowerCase());
+  return found?.value || "";
+}
+
+function decodeBase64Url(data = "") {
+  const normalized = data.replace(/-/g, "+").replace(/_/g, "/");
+  return Buffer.from(normalized, "base64").toString("utf8");
+}
+
+function textFromPayload(payload) {
+  if (!payload) return "";
+  if (payload.mimeType === "text/plain" && payload.body?.data) return decodeBase64Url(payload.body.data);
+  if (payload.mimeType === "text/html" && payload.body?.data) return htmlToText(decodeBase64Url(payload.body.data));
+  const parts = payload.parts || [];
+  const plain = parts.map(textFromPayload).filter(Boolean);
+  return plain.join("\n\n");
+}
+
+function htmlToText(html) {
+  return html
+    .replace(/<style[\s\S]*?<\/style>/gi, " ")
+    .replace(/<script[\s\S]*?<\/script>/gi, " ")
+    .replace(/<br\s*\/?>/gi, "\n")
+    .replace(/<\/p>/gi, "\n\n")
+    .replace(/<[^>]+>/g, " ")
+    .replace(/&nbsp;/g, " ")
+    .replace(/&amp;/g, "&")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/\n{3,}/g, "\n\n")
+    .replace(/[ \t]{2,}/g, " ")
+    .trim();
+}
+
+function parseAddress(value) {
+  const match = value.match(/^(.*?)<([^>]+)>$/);
+  if (match) {
+    return {
+      name: match[1].replace(/"/g, "").trim(),
+      email: match[2].trim().toLowerCase(),
+      raw: value
+    };
+  }
+  return { name: "", email: value.trim().toLowerCase(), raw: value };
+}
+
+function summarizeMessage(message) {
+  const from = parseAddress(header(message, "From"));
+  return {
+    id: message.id,
+    threadId: message.threadId,
+    snippet: message.snippet || "",
+    from,
+    to: header(message, "To"),
+    cc: header(message, "Cc"),
+    subject: header(message, "Subject"),
+    date: header(message, "Date"),
+    body: textFromPayload(message.payload).slice(0, 24_000),
+    labelIds: message.labelIds || []
+  };
+}
+
+function summarizeMessageMetadata(message) {
+  const from = parseAddress(header(message, "From"));
+  return {
+    id: message.id,
+    threadId: message.threadId,
+    snippet: message.snippet || "",
+    from,
+    to: header(message, "To"),
+    cc: header(message, "Cc"),
+    subject: header(message, "Subject"),
+    date: header(message, "Date"),
+    body: "",
+    labelIds: message.labelIds || []
+  };
+}
+
+async function listMessages(state, query = "in:inbox newer_than:30d", maxResults = 20, mode = "full") {
+  const target = maxResults === "all" ? Infinity : Number(maxResults || 20);
+  const pageSize = Math.min(Number.isFinite(target) ? target : 500, 500);
+  const collected = [];
+  let pageToken = "";
+
+  while (collected.length < target) {
+    const tokenParam = pageToken ? `&pageToken=${encodeURIComponent(pageToken)}` : "";
+    const remaining = Number.isFinite(target) ? target - collected.length : pageSize;
+    const list = await gmailFetch(
+      state,
+      `/messages?q=${encodeURIComponent(query)}&maxResults=${Math.min(pageSize, remaining)}${tokenParam}`
+    );
+    collected.push(...(list.messages || []));
+    pageToken = list.nextPageToken || "";
+    if (!pageToken || !(list.messages || []).length) break;
+  }
+
+  const accountEmail = activeAccount(state)?.email || state.google.email;
+  const messages = [];
+  for (let index = 0; index < collected.length; index += 10) {
+    const chunk = collected.slice(index, index + 10);
+    const fullMessages = await Promise.all(
+      chunk.map(async (item) => {
+        const full =
+          mode === "metadata"
+            ? await gmailFetch(
+                state,
+                `/messages/${item.id}?format=metadata&metadataHeaders=From&metadataHeaders=To&metadataHeaders=Cc&metadataHeaders=Subject&metadataHeaders=Date`
+              )
+            : await gmailFetch(state, `/messages/${item.id}?format=full`);
+        const summary = mode === "metadata" ? summarizeMessageMetadata(full) : summarizeMessage(full);
+        return { ...summary, accountEmail };
+      })
+    );
+    messages.push(...fullMessages);
+  }
+  return messages;
+}
+
+async function listMessagesAcrossAccounts(state, query, maxResults, mode = "full") {
+  const accounts = accountsList(state);
+  if (!accounts.length) return [];
+  const perAccount = maxResults === "all" ? "all" : Math.max(5, Math.ceil(Number(maxResults || 20) / accounts.length));
+  const groups = await Promise.all(
+    accounts.map(async (account) => {
+      try {
+        return await listMessages(withActiveAccount(state, account.email), query, perAccount, mode);
+      } catch {
+        return [];
+      }
+    })
+  );
+  return maxResults === "all" ? groups.flat() : groups.flat().slice(0, Number(maxResults || 20));
+}
+
+function buildPrompt({ profile, sender, message, instruction }) {
+  return [
+    {
+      role: "system",
+      content:
+        "あなたは本人の代わりにメール返信の下書きを作る専門家です。作るのは送信前の下書きだけです。過度にAIっぽい定型句、曖昧な美辞麗句、不要に長い前置きは禁止です。相手のメール本文を読み、相手との関係性と本人情報を反映して、自然で具体的な日本語メールを書いてください。必要な不明点がある場合は本文内で勝手に断定せず、確認事項として短く含めてください。"
+    },
+    {
+      role: "user",
+      content: JSON.stringify(
+        {
+          userProfile: profile,
+          senderProfile: sender,
+          incomingEmail: {
+            from: message.from,
+            to: message.to,
+            cc: message.cc,
+            subject: message.subject,
+            date: message.date,
+            body: message.body
+          },
+          requestedDirection: instruction || "自然で人間らしい返信。必要ならお礼、回答、次の行動を入れる。"
+        },
+        null,
+        2
+      )
+    }
+  ];
+}
+
+async function generateReply(payload) {
+  const config = openAIConfig(payload.state);
+  if (!config.key) {
+    const err = new Error("OPENAI_API_KEYを設定してください。");
+    err.status = 400;
+    throw err;
+  }
+
+  const messages = buildPrompt(payload);
+  const response = await fetch("https://api.openai.com/v1/chat/completions", {
+    method: "POST",
+    headers: {
+      authorization: `Bearer ${config.key}`,
+      "content-type": "application/json"
+    },
+    body: JSON.stringify({
+      model: config.model,
+      messages,
+      temperature: 0.65
+    })
+  });
+  const body = await response.json();
+  if (!response.ok) throw new Error(body.error?.message || "OpenAI request failed");
+  return body.choices?.[0]?.message?.content?.trim() || "";
+}
+
+async function chatComplete(state, messages, temperature = 0.35) {
+  const config = openAIConfig(state);
+  if (!config.key) return "";
+  const response = await fetch("https://api.openai.com/v1/chat/completions", {
+    method: "POST",
+    headers: {
+      authorization: `Bearer ${config.key}`,
+      "content-type": "application/json"
+    },
+    body: JSON.stringify({
+      model: config.model,
+      messages,
+      temperature
+    })
+  });
+  const body = await response.json();
+  if (!response.ok) throw new Error(body.error?.message || "OpenAI request failed");
+  return body.choices?.[0]?.message?.content?.trim() || "";
+}
+
+function messageTime(message) {
+  const time = Date.parse(message.date || "");
+  return Number.isFinite(time) ? time : 0;
+}
+
+function importantScore(message) {
+  const text = `${message.from?.name || ""} ${message.from?.email || ""} ${message.subject || ""} ${message.snippet || ""} ${message.body || ""}`;
+  let score = 0;
+  if (/締切|〆切|期限|web|ウェブ|適性検査|受験|面接|面談|説明会|セミナー|インターン|選考|内定|応募|エントリー|日程|候補日|予約|内見|お問い合わせ|返信|ご返信/i.test(text)) score += 5;
+  if (/saiyo|onecareer|openwork|linkedin|pwc|recruit|career|fudosan|assist|不動産/i.test(text)) score += 3;
+  if (/no-reply|noreply|配信専用|自動送信|メルマガ|クーポン|キャンペーン|発送|注文|認証コード|ログインコード/i.test(text)) score -= 4;
+  if ((message.labelIds || []).includes("UNREAD")) score += 1;
+  return score;
+}
+
+function careerSignalScore(message) {
+  const text = `${message.from?.name || ""} ${message.from?.email || ""} ${message.subject || ""} ${message.snippet || ""} ${message.body || ""}`.toLowerCase();
+  let score = 0;
+  if (/採用|新卒|就活|就職|選考|面接|面談|説明会|会社説明|インターン|インターンシップ|webテスト|ウェブテスト|適性検査|es\b|エントリー|マイページ|内定|オファー|リクルート|キャリア|セミナー|座談会/i.test(text)) score += 6;
+  if (/saiyo|recruit|career|hr@|human.?resources|onecareer|openwork|offerbox|wantedly|linkedin|rikunabi|mynavi|job|intern/i.test(text)) score += 5;
+  if (/締切|〆切|期限|開催|予約|日程|候補日|受験|提出|応募/i.test(text)) score += 2;
+  if (/不動産|住まい|内見|賃貸|物件|家賃|保証会社|引越|配送|注文|発送|旅行|ホテル|航空券|レストラン|美容|病院|歯科|チケット|ライブ|決済|認証コード|ログイン|クーポン|キャンペーン|メルマガ|newsletter/i.test(text)) score -= 7;
+  if (/no-reply|noreply|notification|配信専用|自動送信/i.test(text)) score -= 1;
+  return score;
+}
+
+function isCareerScheduleCandidate(message) {
+  return careerSignalScore(message) >= 6;
+}
+
+function extractScheduleItems(messages) {
+  const items = [];
+  const datePattern = /(?:(202[0-9])年)?\s*(1[0-2]|0?[1-9])月\s*([12][0-9]|3[01]|0?[1-9])日(?:[（(][月火水木金土日][）)])?(?:\s*([0-2]?[0-9])[:：時]\s*([0-5][0-9])?分?)?/g;
+  const relativePattern = /(今日|明日|明後日|本日|今週|来週).{0,24}(締切|〆切|開催|説明会|面接|面談|セミナー|適性検査|webテスト|ウェブテスト|受験|応募)/gi;
+  const keywordPattern = /(採用|新卒|就活|就職|選考|説明会|会社説明|面接|面談|セミナー|座談会|適性検査|webテスト|ウェブテスト|受験|応募|エントリー|インターン|インターンシップ|締切|〆切|期限)/i;
+  const dateContextPattern = /(採用|新卒|就活|選考|説明会|会社説明|面接|面談|セミナー|座談会|適性検査|webテスト|ウェブテスト|受験|応募|エントリー|インターン|締切|〆切|期限|開催|提出)/i;
+
+  for (const message of messages) {
+    if (!isCareerScheduleCandidate(message)) continue;
+    const text = `${message.subject || ""}\n${message.snippet || ""}\n${(message.body || "").slice(0, 5000)}`;
+    if (!keywordPattern.test(text)) continue;
+    const urls = Array.from(
+      new Set((text.match(/https?:\/\/[^\s<>"'）)]+/g) || []).map((url) => url.replace(/[、。,.]+$/g, "")))
+    ).slice(0, 5);
+    const baseYear = new Date(messageTime(message) || Date.now()).getFullYear();
+    const seen = new Set();
+
+    for (const match of text.matchAll(datePattern)) {
+      const context = text.slice(Math.max(0, match.index - 140), Math.min(text.length, match.index + match[0].length + 180));
+      if (!dateContextPattern.test(context)) continue;
+      const year = Number(match[1] || baseYear);
+      const month = Number(match[2]);
+      const day = Number(match[3]);
+      const hour = match[4] ? Number(match[4]) : null;
+      const minute = match[5] ? Number(match[5]) : 0;
+      const key = `${year}-${month}-${day}-${hour ?? ""}-${message.id}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      const iso = `${year}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
+      items.push({
+        date: iso,
+        time: hour === null ? "" : `${String(hour).padStart(2, "0")}:${String(minute).padStart(2, "0")}`,
+        type: /締切|〆切|期限|受験|webテスト|ウェブテスト|適性検査/i.test(text) ? "締切" : "予定",
+        title: message.subject || "(件名なし)",
+        from: message.from?.name || message.from?.email || "",
+        accountEmail: message.accountEmail || "",
+        urls,
+        content: text.slice(0, 1200),
+        snippet: (message.snippet || text).slice(0, 220),
+        messageId: message.id
+      });
+    }
+
+    if (!seen.size && relativePattern.test(text)) {
+      items.push({
+        date: "",
+        time: "",
+        type: /締切|〆切|期限|受験|webテスト|ウェブテスト|適性検査/i.test(text) ? "締切" : "予定",
+        title: message.subject || "(件名なし)",
+        from: message.from?.name || message.from?.email || "",
+        accountEmail: message.accountEmail || "",
+        urls,
+        content: text.slice(0, 1200),
+        snippet: (message.snippet || text).slice(0, 220),
+        messageId: message.id
+      });
+    }
+  }
+
+  return items.sort((a, b) => (b.date || "0000-00-00").localeCompare(a.date || "0000-00-00"));
+}
+
+function parseJsonArray(text) {
+  const trimmed = (text || "").trim().replace(/^```json\s*/i, "").replace(/^```\s*/i, "").replace(/```$/i, "").trim();
+  try {
+    const parsed = JSON.parse(trimmed);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    const match = trimmed.match(/\[[\s\S]*\]/);
+    if (!match) return [];
+    try {
+      const parsed = JSON.parse(match[0]);
+      return Array.isArray(parsed) ? parsed : [];
+    } catch {
+      return [];
+    }
+  }
+}
+
+async function extractCareerScheduleItems(state, messages) {
+  const candidates = messages
+    .filter(isCareerScheduleCandidate)
+    .map((message) => ({ message, score: careerSignalScore(message) }))
+    .sort((a, b) => b.score - a.score || messageTime(b.message) - messageTime(a.message))
+    .slice(0, 40)
+    .map(({ message }, index) => ({ ...message, sourceIndex: index }));
+
+  if (!configuredOpenAI(state) || !candidates.length) return extractScheduleItems(candidates);
+
+  const source = candidates.map((message) => ({
+    sourceIndex: message.sourceIndex,
+    from: message.from,
+    subject: message.subject,
+    dateReceived: message.date,
+    snippet: message.snippet,
+    body: (message.body || "").slice(0, 1800),
+    accountEmail: message.accountEmail,
+    messageId: message.id
+  }));
+
+  let answer = "";
+  try {
+    answer = await chatComplete(
+      state,
+      [
+        {
+          role: "system",
+          content:
+            "あなたは就活メールだけを整理する秘書です。採用、選考、インターン、会社説明会、面接、面談、Webテスト、ES、応募締切に関係する予定だけを抽出します。不動産、配送、注文、旅行、認証、広告、一般イベントなど就活以外は必ず除外します。返答はJSON配列のみ。"
+        },
+        {
+          role: "user",
+          content: JSON.stringify({
+            rule: "各予定は sourceIndex, date(YYYY-MM-DDまたは空), time(HH:mmまたは空), type(説明会/面談/Webテスト/締切/インターン/選考イベント), title(会社名 + 短い内容), content(重要事項を短く), urls, isCareer を返す。日付が本文から確定できない場合はdateを空にする。",
+            emails: source
+          })
+        }
+      ],
+      0.1
+    );
+  } catch {
+    return extractScheduleItems(candidates);
+  }
+
+  const aiItems = parseJsonArray(answer)
+    .filter((item) => item && item.isCareer !== false)
+    .map((item) => {
+      const sourceMessage = candidates.find((message) => Number(message.sourceIndex) === Number(item.sourceIndex));
+      if (!sourceMessage) return null;
+      const sourceText = `${sourceMessage.subject || ""}\n${sourceMessage.snippet || ""}\n${sourceMessage.body || ""}`;
+      const urls = Array.from(
+        new Set([...(Array.isArray(item.urls) ? item.urls : []), ...(sourceText.match(/https?:\/\/[^\s<>"'）)]+/g) || [])])
+      )
+        .map((url) => String(url).replace(/[、。,.]+$/g, ""))
+        .slice(0, 5);
+      return {
+        date: /^\d{4}-\d{2}-\d{2}$/.test(item.date || "") ? item.date : "",
+        time: /^\d{1,2}:\d{2}$/.test(item.time || "") ? item.time.padStart(5, "0") : "",
+        type: item.type || "選考イベント",
+        title: item.title || sourceMessage.subject || "(件名なし)",
+        from: sourceMessage.from?.name || sourceMessage.from?.email || "",
+        accountEmail: sourceMessage.accountEmail || "",
+        urls,
+        content: item.content || sourceMessage.snippet || "",
+        snippet: item.content || sourceMessage.snippet || "",
+        messageId: sourceMessage.id
+      };
+    })
+    .filter(Boolean);
+
+  return (aiItems.length ? aiItems : extractScheduleItems(candidates)).sort((a, b) =>
+    (b.date || "0000-00-00").localeCompare(a.date || "0000-00-00")
+  );
+}
+
+function fallbackDigest(messages, period) {
+  const important = messages
+    .map((message) => ({ message, score: importantScore(message) }))
+    .filter((item) => item.score > 0)
+    .sort((a, b) => b.score - a.score || messageTime(b.message) - messageTime(a.message))
+    .slice(0, 8);
+  if (!important.length) return `${period}の重要そうなメールは見つかりませんでした。`;
+  return important
+    .map(({ message }) => `・${message.subject || "(件名なし)"} / ${message.from?.name || message.from?.email || ""}\n  ${message.snippet || ""}`)
+    .join("\n");
+}
+
+function encodeBase64Url(text) {
+  return Buffer.from(text, "utf8").toString("base64").replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/g, "");
+}
+
+function draftRaw({ to, cc, subject, body, inReplyTo }) {
+  const headers = [
+    `To: ${to}`,
+    cc ? `Cc: ${cc}` : "",
+    `Subject: ${subject.startsWith("Re:") ? subject : `Re: ${subject}`}`,
+    inReplyTo ? `In-Reply-To: ${inReplyTo}` : "",
+    "Content-Type: text/plain; charset=UTF-8"
+  ].filter(Boolean);
+  return `${headers.join("\r\n")}\r\n\r\n${body}`;
+}
+
+async function route(req, res) {
+  const url = new URL(req.url, `http://localhost:${port}`);
+  const state = await readState();
+
+  try {
+    if (req.method === "GET" && url.pathname === "/healthz") {
+      sendJson(res, 200, { ok: true });
+      return;
+    }
+
+    if (req.method === "GET" && url.pathname === "/api/status") {
+      activeAccount(state);
+      await writeState(state);
+      sendJson(res, 200, {
+        googleConfigured: configuredGoogle(state),
+        openAIConfigured: configuredOpenAI(state),
+        configFromEnv: {
+          google: Boolean(env.GOOGLE_CLIENT_ID && env.GOOGLE_CLIENT_SECRET),
+          openAI: Boolean(env.OPENAI_API_KEY)
+        },
+        gmailConnected: Boolean(state.google.tokens),
+        email: state.google.email,
+        activeEmail: state.google.activeEmail || state.google.email,
+        accounts: accountsList(state),
+        profile: state.profile,
+        senders: state.senders
+      });
+      return;
+    }
+
+    if (req.method === "GET" && url.pathname === "/api/network-url") {
+      const forwardedHost = req.headers.host || `localhost:${port}`;
+      const fallback = `http://${forwardedHost.replace(/^127\.0\.0\.1/, "localhost")}`;
+      const candidates = [];
+      try {
+        const os = await import("node:os");
+        for (const entries of Object.values(os.networkInterfaces())) {
+          for (const entry of entries || []) {
+            if (entry.family === "IPv4" && !entry.internal) {
+              candidates.push(`http://${entry.address}:${port}`);
+            }
+          }
+        }
+      } catch {
+        // Fallback below is enough.
+      }
+      sendJson(res, 200, { url: candidates[0] || fallback, candidates });
+      return;
+    }
+
+    if (req.method === "POST" && url.pathname === "/api/config") {
+      const body = await parseBody(req);
+      state.config = {
+        ...state.config,
+        googleClientId: body.googleClientId || state.config.googleClientId || "",
+        googleClientSecret: body.googleClientSecret || state.config.googleClientSecret || "",
+        openAIKey: body.openAIKey || state.config.openAIKey || "",
+        openAIModel: body.openAIModel || state.config.openAIModel || "gpt-4o-mini"
+      };
+      await writeState(state);
+      sendJson(res, 200, {
+        googleConfigured: configuredGoogle(state),
+        openAIConfigured: configuredOpenAI(state)
+      });
+      return;
+    }
+
+    if (req.method === "POST" && url.pathname === "/api/profile") {
+      const body = await parseBody(req);
+      state.profile = { ...state.profile, ...body };
+      await writeState(state);
+      sendJson(res, 200, { profile: state.profile });
+      return;
+    }
+
+    if (req.method === "POST" && url.pathname === "/api/senders") {
+      const body = await parseBody(req);
+      if (!body.email) throw new Error("email is required");
+      state.senders[body.email.toLowerCase()] = {
+        name: body.name || "",
+        relationship: body.relationship || "",
+        tone: body.tone || "自然な敬語",
+        facts: body.facts || "",
+        avoid: body.avoid || ""
+      };
+      await writeState(state);
+      sendJson(res, 200, { sender: state.senders[body.email.toLowerCase()] });
+      return;
+    }
+
+    if (req.method === "POST" && url.pathname === "/api/accounts/active") {
+      const body = await parseBody(req);
+      if (!body.email) throw new Error("email is required");
+      if (!state.google.accounts?.[body.email]) {
+        const err = new Error("このアカウントはまだ接続されていません。");
+        err.status = 404;
+        throw err;
+      }
+      state.google.activeEmail = body.email;
+      state.google.email = body.email;
+      state.google.tokens = state.google.accounts[body.email].tokens;
+      await writeState(state);
+      sendJson(res, 200, { activeEmail: body.email, accounts: accountsList(state) });
+      return;
+    }
+
+    if (req.method === "GET" && url.pathname === "/auth/google") {
+      if (!configuredGoogle(state)) {
+        redirect(res, "/?setup=google");
+        return;
+      }
+      const oauthState = crypto.randomBytes(16).toString("hex");
+      state.google.oauthState = oauthState;
+      await writeState(state);
+      const redirectUri = `${publicOrigin(req)}/auth/google/callback`;
+      const params = new URLSearchParams({
+        client_id: googleConfig(state).clientId,
+        redirect_uri: redirectUri,
+        response_type: "code",
+        scope: gmailScopes.join(" "),
+        access_type: "offline",
+        prompt: "consent",
+        state: oauthState
+      });
+      redirect(res, `https://accounts.google.com/o/oauth2/v2/auth?${params}`);
+      return;
+    }
+
+    if (req.method === "GET" && url.pathname === "/auth/google/callback") {
+      if (url.searchParams.get("state") !== state.google.oauthState) {
+        sendText(res, 400, "OAuth stateが一致しません。もう一度接続してください。");
+        return;
+      }
+      const code = url.searchParams.get("code");
+      const params = new URLSearchParams({
+        code,
+        client_id: googleConfig(state).clientId,
+        client_secret: googleConfig(state).clientSecret,
+        redirect_uri: `${publicOrigin(req)}/auth/google/callback`,
+        grant_type: "authorization_code"
+      });
+      const tokenResponse = await fetch("https://oauth2.googleapis.com/token", {
+        method: "POST",
+        headers: { "content-type": "application/x-www-form-urlencoded" },
+        body: params
+      });
+      const tokens = await tokenResponse.json();
+      if (!tokenResponse.ok) throw new Error(tokens.error_description || tokens.error || "OAuth failed");
+      const accountTokens = {
+        ...tokens,
+        expires_at: Date.now() + (tokens.expires_in || 3600) * 1000
+      };
+      const profile = await gmailFetch({ ...state, google: { ...state.google, tokens: accountTokens } }, "/profile");
+      const email = profile.emailAddress;
+      state.google.accounts = {
+        ...(state.google.accounts || {}),
+        [email]: {
+          email,
+          tokens: accountTokens,
+          connectedAt: new Date().toISOString()
+        }
+      };
+      state.google.tokens = accountTokens;
+      state.google.email = email;
+      state.google.activeEmail = email;
+      state.google.oauthState = null;
+      await writeState(state);
+      redirect(res, "/");
+      return;
+    }
+
+    if (req.method === "GET" && url.pathname === "/api/messages") {
+      const query = url.searchParams.get("q") || "in:inbox newer_than:30d";
+      const maxParam = url.searchParams.get("max") || "20";
+      const max = maxParam === "all" ? "all" : Math.min(Number(maxParam || 20), 5000);
+      const mode = url.searchParams.get("mode") || (max === "all" || Number(max) > 200 ? "metadata" : "full");
+      const account = url.searchParams.get("account") || state.google.activeEmail || state.google.email;
+      const messages =
+        account === "all"
+          ? await listMessagesAcrossAccounts(state, query, max, mode)
+          : await listMessages(withActiveAccount(state, account), query, max, mode);
+      sendJson(res, 200, { messages });
+      return;
+    }
+
+    if (req.method === "GET" && url.pathname.startsWith("/api/messages/")) {
+      const id = decodeURIComponent(url.pathname.split("/").pop());
+      const account = url.searchParams.get("account") || state.google.activeEmail || state.google.email;
+      const accountState = withActiveAccount(state, account);
+      const full = await gmailFetch(accountState, `/messages/${id}?format=full`);
+      sendJson(res, 200, { message: { ...summarizeMessage(full), accountEmail: account } });
+      return;
+    }
+
+    if (req.method === "GET" && url.pathname === "/api/career/schedule") {
+      const max = Math.min(Number(url.searchParams.get("max") || 120), 220);
+      const account = url.searchParams.get("account") || "all";
+      const query =
+        url.searchParams.get("q") ||
+        "newer_than:180d (採用 OR 新卒 OR 選考 OR 説明会 OR インターン OR 面接 OR 面談 OR 締切 OR 〆切 OR 適性検査 OR WEBテスト OR ウェブテスト OR エントリー OR 就活)";
+      const messages =
+        account === "all"
+          ? await listMessagesAcrossAccounts(state, query, max)
+          : await listMessages(withActiveAccount(state, account), query, max);
+      sendJson(res, 200, { items: await extractCareerScheduleItems(state, messages), scanned: messages.length });
+      return;
+    }
+
+    if (req.method === "GET" && url.pathname === "/api/digest") {
+      const period = url.searchParams.get("period") || "week";
+      const account = url.searchParams.get("account") || "all";
+      const queryMap = {
+        today: "newer_than:1d",
+        week: "newer_than:7d",
+        month: "newer_than:30d"
+      };
+      const query = queryMap[period] || queryMap.week;
+      const max = Math.min(Number(url.searchParams.get("max") || 60), 100);
+      const messages =
+        account === "all"
+          ? await listMessagesAcrossAccounts(state, query, max)
+          : await listMessages(withActiveAccount(state, account), query, max);
+      const important = messages
+        .map((message) => ({ ...message, importance: importantScore(message) }))
+        .filter((message) => message.importance > 0)
+        .sort((a, b) => b.importance - a.importance || messageTime(b) - messageTime(a))
+        .slice(0, 12);
+      let digest = fallbackDigest(messages, period);
+      if (configuredOpenAI(state) && important.length) {
+        digest = await chatComplete(
+          state,
+          [
+            {
+              role: "system",
+              content:
+                "あなたは就活と日常の重要メールを整理する秘書です。認証コード、広告、注文通知は原則省き、締切、説明会、面接、Webテスト、返信が必要なメールを優先して、日本語で短く要約してください。"
+            },
+            {
+              role: "user",
+              content: JSON.stringify(
+                {
+                  period,
+                  emails: important.map((message) => ({
+                    account: message.accountEmail,
+                    from: message.from,
+                    subject: message.subject,
+                    date: message.date,
+                    snippet: message.snippet,
+                    body: (message.body || "").slice(0, 1600)
+                  }))
+                },
+                null,
+                2
+              )
+            }
+          ],
+          0.25
+        );
+      }
+      sendJson(res, 200, { digest, messages: important, scanned: messages.length });
+      return;
+    }
+
+    if (req.method === "POST" && url.pathname === "/api/reply") {
+      const body = await parseBody(req);
+      const message = body.message;
+      const senderEmail = message?.from?.email?.toLowerCase();
+      const sender = state.senders[senderEmail] || {
+        name: message?.from?.name || "",
+        relationship: "",
+        tone: "自然な敬語",
+        facts: "",
+        avoid: ""
+      };
+      const reply = await generateReply({
+        profile: state.profile,
+        sender,
+        message,
+        instruction: body.instruction,
+        state
+      });
+      sendJson(res, 200, { reply, sender });
+      return;
+    }
+
+    if (req.method === "POST" && url.pathname === "/api/draft") {
+      const body = await parseBody(req);
+      const message = body.message;
+      const raw = draftRaw({
+        to: message.from.raw,
+        cc: "",
+        subject: message.subject || "",
+        body: body.reply,
+        inReplyTo: message.id
+      });
+      const draft = await gmailFetch(withActiveAccount(state, message.accountEmail || state.google.activeEmail), "/drafts", {
+        method: "POST",
+        body: JSON.stringify({
+          message: {
+            threadId: message.threadId,
+            raw: encodeBase64Url(raw)
+          }
+        })
+      });
+      sendJson(res, 200, { draft });
+      return;
+    }
+
+    if (req.method === "GET") {
+      const pathname = url.pathname === "/" ? "/index.html" : url.pathname;
+      const safePath = path.normalize(path.join(publicDir, pathname));
+      if (!safePath.startsWith(publicDir)) {
+        sendText(res, 403, "Forbidden");
+        return;
+      }
+      const file = await fs.readFile(safePath);
+      const type = safePath.endsWith(".css")
+        ? "text/css; charset=utf-8"
+        : safePath.endsWith(".js")
+          ? "text/javascript; charset=utf-8"
+          : safePath.endsWith(".webmanifest")
+            ? "application/manifest+json; charset=utf-8"
+            : safePath.endsWith(".svg")
+              ? "image/svg+xml; charset=utf-8"
+              : "text/html; charset=utf-8";
+      sendText(res, 200, file, type);
+      return;
+    }
+
+    sendJson(res, 404, { error: "Not found" });
+  } catch (error) {
+    sendJson(res, error.status || 500, { error: error.message || String(error) });
+  }
+}
+
+http.createServer(route).listen(port, host, () => {
+  console.log(`Email AI Gmail is running at http://localhost:${port}`);
+});
