@@ -415,6 +415,9 @@ function buildCalendar(items) {
     grouped.get(key).push(item);
   }
 
+  const now = new Date();
+  const todayStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
+
   const months = Array.from(grouped.keys()).sort((a, b) => b.localeCompare(a));
   const monthHtml = months
     .map((key) => {
@@ -431,9 +434,10 @@ function buildCalendar(items) {
         const day = index + 1;
         const date = `${key}-${String(day).padStart(2, "0")}`;
         const dayItems = itemsByDate.get(date) || [];
+        const isToday = date === todayStr;
         return `
-          <div class="calendarCell ${dayItems.length ? "hasEvents" : ""}">
-            <div class="dayNumber">${day}</div>
+          <div class="calendarCell ${dayItems.length ? "hasEvents" : ""} ${isToday ? "today" : ""}">
+            <div class="dayNumber ${isToday ? "todayNumber" : ""}">${day}</div>
             <div class="dayEvents">
               ${dayItems
                 .slice(0, 4)
