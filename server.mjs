@@ -44,7 +44,8 @@ const defaultState = {
     grokApiKey: "",
     grokModel: "grok-4",
     anthropicApiKey: "",
-    anthropicModel: "claude-opus-4-5"
+    anthropicModel: "claude-sonnet-4-6",
+    preferredAiProvider: ""
   }
 };
 
@@ -150,7 +151,10 @@ function hasConnectionData(state) {
       Object.keys(state?.google?.accounts || {}).length ||
       state?.config?.googleClientId ||
       state?.config?.googleClientSecret ||
-      state?.config?.openAIKey
+      state?.config?.openAIKey ||
+      state?.config?.geminiApiKey ||
+      state?.config?.grokApiKey ||
+      state?.config?.anthropicApiKey
   );
 }
 
@@ -186,10 +190,21 @@ async function writeState(state) {
       Object.keys(current?.google?.accounts || {}).length ||
       current?.config?.googleClientId ||
       current?.config?.googleClientSecret ||
-      current?.config?.openAIKey;
+      current?.config?.openAIKey ||
+      current?.config?.geminiApiKey ||
+      current?.config?.grokApiKey ||
+      current?.config?.anthropicApiKey;
     if (hasSavedSecrets) {
-      const backupFile = path.join(path.dirname(targetFile), `app.${new Date().toISOString().replace(/[:.]/g, "-")}.bak.json`);
+      const backupDir = path.dirname(targetFile);
+      const backupFile = path.join(backupDir, `app.${new Date().toISOString().replace(/[:.]/g, "-")}.bak.json`);
       await fs.writeFile(backupFile, `${JSON.stringify(current, null, 2)}\n`);
+      const allBackups = (await fs.readdir(backupDir))
+        .filter((f) => /^app\..+\.bak\.json$/.test(f))
+        .sort()
+        .reverse();
+      for (const old of allBackups.slice(5)) {
+        await fs.unlink(path.join(backupDir, old)).catch(() => {});
+      }
     }
   } catch {
     // No previous state to back up yet.
@@ -338,90 +353,86 @@ async function writeJobsData(data) {
   await fs.writeFile(jobsDataFile, `${JSON.stringify(data, null, 2)}\n`);
 }
 
-async function jobsAiChat(state, systemPrompt, userContent) {
-  const errors = [];
+function aiProviderOrder(state) {
+  const preferred = state.config?.preferredAiProvider;
+  const defaults = ["gemini", "anthropic", "openai", "grok"];
+  if (!preferred) return defaults;
+  return [preferred, ...defaults.filter((p) => p !== preferred)];
+}
 
-  if (configuredGemini(state)) {
-    try {
+async function tryProviderChat(provider, state, messages, temperature) {
+  switch (provider) {
+    case "gemini": {
+      if (!configuredGemini(state)) return null;
       const config = geminiConfig(state);
+      const system = messages.find((m) => m.role === "system")?.content || "";
+      const contents = messages
+        .filter((m) => m.role !== "system")
+        .map((m) => ({ role: m.role === "assistant" ? "model" : "user", parts: [{ text: m.content }] }));
       const response = await fetch(
         `https://generativelanguage.googleapis.com/v1beta/models/${config.model}:generateContent?key=${config.key}`,
         {
           method: "POST",
           headers: { "content-type": "application/json" },
           body: JSON.stringify({
-            systemInstruction: { parts: [{ text: systemPrompt }] },
-            contents: [{ role: "user", parts: [{ text: userContent }] }],
-            generationConfig: { temperature: 0.7, maxOutputTokens: 4096 }
+            ...(system ? { systemInstruction: { parts: [{ text: system }] } } : {}),
+            contents,
+            generationConfig: { temperature, maxOutputTokens: 4096 }
           })
         }
       );
       const body = await response.json();
-      if (response.ok) return body.candidates?.[0]?.content?.parts?.[0]?.text?.trim() || "";
-      errors.push(`Gemini: ${body.error?.message || response.status}`);
-    } catch (e) { errors.push(`Gemini: ${e.message}`); }
-  }
-
-  if (configuredAnthropic(state)) {
-    try {
+      return response.ok ? (body.candidates?.[0]?.content?.parts?.[0]?.text?.trim() || "") : null;
+    }
+    case "anthropic": {
+      if (!configuredAnthropic(state)) return null;
       const config = anthropicConfig(state);
+      const system = messages.find((m) => m.role === "system")?.content || "";
+      const filtered = messages.filter((m) => m.role !== "system");
       const response = await fetch("https://api.anthropic.com/v1/messages", {
         method: "POST",
-        headers: {
-          "content-type": "application/json",
-          "x-api-key": config.key,
-          "anthropic-version": "2023-06-01"
-        },
-        body: JSON.stringify({
-          model: config.model,
-          max_tokens: 4096,
-          system: systemPrompt,
-          messages: [{ role: "user", content: userContent }]
-        })
+        headers: { "content-type": "application/json", "x-api-key": config.key, "anthropic-version": "2023-06-01" },
+        body: JSON.stringify({ model: config.model, max_tokens: 4096, ...(system ? { system } : {}), messages: filtered })
       });
       const body = await response.json();
-      if (response.ok) return body.content?.[0]?.text?.trim() || "";
-      errors.push(`Anthropic: ${body.error?.message || response.status}`);
-    } catch (e) { errors.push(`Anthropic: ${e.message}`); }
-  }
-
-  if (configuredOpenAI(state)) {
-    try {
+      return response.ok ? (body.content?.[0]?.text?.trim() || "") : null;
+    }
+    case "openai": {
+      if (!configuredOpenAI(state)) return null;
       const config = openAIConfig(state);
       const response = await fetch("https://api.openai.com/v1/chat/completions", {
         method: "POST",
         headers: { authorization: `Bearer ${config.key}`, "content-type": "application/json" },
-        body: JSON.stringify({
-          model: config.model,
-          messages: [{ role: "system", content: systemPrompt }, { role: "user", content: userContent }],
-          temperature: 0.7
-        })
+        body: JSON.stringify({ model: config.model, messages, temperature })
       });
       const body = await response.json();
-      if (response.ok) return body.choices?.[0]?.message?.content?.trim() || "";
-      errors.push(`OpenAI: ${body.error?.message || response.status}`);
-    } catch (e) { errors.push(`OpenAI: ${e.message}`); }
-  }
-
-  if (configuredGrok(state)) {
-    try {
+      return response.ok ? (body.choices?.[0]?.message?.content?.trim() || "") : null;
+    }
+    case "grok": {
+      if (!configuredGrok(state)) return null;
       const config = grokConfig(state);
       const response = await fetch("https://api.x.ai/v1/chat/completions", {
         method: "POST",
         headers: { authorization: `Bearer ${config.key}`, "content-type": "application/json" },
-        body: JSON.stringify({
-          model: config.model,
-          messages: [{ role: "system", content: systemPrompt }, { role: "user", content: userContent }],
-          temperature: 0.7
-        })
+        body: JSON.stringify({ model: config.model, messages, temperature })
       });
       const body = await response.json();
-      if (response.ok) return body.choices?.[0]?.message?.content?.trim() || "";
-      errors.push(`Grok: ${body.error?.message || response.status}`);
-    } catch (e) { errors.push(`Grok: ${e.message}`); }
+      return response.ok ? (body.choices?.[0]?.message?.content?.trim() || "") : null;
+    }
+    default:
+      return null;
   }
+}
 
-  const err = new Error(errors.length ? `AI処理に失敗しました: ${errors.join(" / ")}` : "AIサービスが設定されていません。設定からAPIキーを入力してください。");
+async function jobsAiChat(state, systemPrompt, userContent) {
+  const messages = [{ role: "system", content: systemPrompt }, { role: "user", content: userContent }];
+  for (const provider of aiProviderOrder(state)) {
+    try {
+      const result = await tryProviderChat(provider, state, messages, 0.7);
+      if (result !== null) return result;
+    } catch {}
+  }
+  const err = new Error("AIサービスが設定されていません。設定からAPIキーを入力してください。");
   err.status = 400;
   throw err;
 }
@@ -720,73 +731,12 @@ function buildPrompt({ profile, sender, message, instruction }) {
 }
 
 async function chatComplete(state, messages, temperature = 0.35) {
-  // Gemini
-  if (configuredGemini(state)) {
+  for (const provider of aiProviderOrder(state)) {
     try {
-      const config = geminiConfig(state);
-      const system = messages.find((m) => m.role === "system")?.content || "";
-      const userMessages = messages.filter((m) => m.role !== "system");
-      const contents = userMessages.map((m) => ({ role: m.role === "assistant" ? "model" : "user", parts: [{ text: m.content }] }));
-      const response = await fetch(
-        `https://generativelanguage.googleapis.com/v1beta/models/${config.model}:generateContent?key=${config.key}`,
-        {
-          method: "POST",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify({
-            ...(system ? { systemInstruction: { parts: [{ text: system }] } } : {}),
-            contents,
-            generationConfig: { temperature, maxOutputTokens: 4096 }
-          })
-        }
-      );
-      const body = await response.json();
-      if (response.ok) return body.candidates?.[0]?.content?.parts?.[0]?.text?.trim() || "";
+      const result = await tryProviderChat(provider, state, messages, temperature);
+      if (result !== null) return result;
     } catch {}
   }
-
-  // Anthropic
-  if (configuredAnthropic(state)) {
-    try {
-      const config = anthropicConfig(state);
-      const system = messages.find((m) => m.role === "system")?.content || "";
-      const filtered = messages.filter((m) => m.role !== "system");
-      const response = await fetch("https://api.anthropic.com/v1/messages", {
-        method: "POST",
-        headers: { "content-type": "application/json", "x-api-key": config.key, "anthropic-version": "2023-06-01" },
-        body: JSON.stringify({ model: config.model, max_tokens: 4096, ...(system ? { system } : {}), messages: filtered })
-      });
-      const body = await response.json();
-      if (response.ok) return body.content?.[0]?.text?.trim() || "";
-    } catch {}
-  }
-
-  // OpenAI
-  if (configuredOpenAI(state)) {
-    const config = openAIConfig(state);
-    const response = await fetch("https://api.openai.com/v1/chat/completions", {
-      method: "POST",
-      headers: { authorization: `Bearer ${config.key}`, "content-type": "application/json" },
-      body: JSON.stringify({ model: config.model, messages, temperature })
-    });
-    const body = await response.json();
-    if (!response.ok) throw new Error(body.error?.message || "OpenAI request failed");
-    return body.choices?.[0]?.message?.content?.trim() || "";
-  }
-
-  // Grok
-  if (configuredGrok(state)) {
-    try {
-      const config = grokConfig(state);
-      const response = await fetch("https://api.x.ai/v1/chat/completions", {
-        method: "POST",
-        headers: { authorization: `Bearer ${config.key}`, "content-type": "application/json" },
-        body: JSON.stringify({ model: config.model, messages, temperature })
-      });
-      const body = await response.json();
-      if (response.ok) return body.choices?.[0]?.message?.content?.trim() || "";
-    } catch {}
-  }
-
   return "";
 }
 
@@ -1012,6 +962,35 @@ function draftRaw({ to, cc, subject, body, inReplyTo }) {
   return `${headers.join("\r\n")}\r\n\r\n${body}`;
 }
 
+function fallbackCommandParse(command) {
+  const cmd = command.toLowerCase();
+  if (/受信|inbox/.test(cmd)) return { action: "switch-tab", tab: "inbox", message: "受信トレイに切り替えます。" };
+  if (/スター|star/.test(cmd)) return { action: "switch-tab", tab: "starred", message: "スター付きに切り替えます。" };
+  if (/送信済み|sent/.test(cmd)) return { action: "switch-tab", tab: "sent", message: "送信済みに切り替えます。" };
+  if (/下書き|draft/.test(cmd)) return { action: "switch-tab", tab: "drafts", message: "下書きに切り替えます。" };
+  if (/最重要|重要|urgent/.test(cmd)) return { action: "switch-tab", tab: "important", message: "最重要に切り替えます。" };
+  if (/未読|unread/.test(cmd)) return { action: "switch-tab", tab: "unread", message: "未読に切り替えます。" };
+  if (/要対応|対応/.test(cmd)) return { action: "switch-tab", tab: "action", message: "要対応に切り替えます。" };
+  if (/住まい|不動産|fudosan/.test(cmd)) return { action: "switch-tab", tab: "housing", message: "住まいタブに切り替えます。" };
+  if (/就活|career/.test(cmd)) return { action: "switch-tab", tab: "career", message: "就活タブに切り替えます。" };
+  if (/すべて|全部|all/.test(cmd) && /フィルター|filter|表示/.test(cmd)) return { action: "switch-filter", filter: "all", message: "フィルターをすべてに切り替えます。" };
+  if (/返信|対応/.test(cmd) && /フィルター|filter|絞り/.test(cmd)) return { action: "switch-filter", filter: "action", message: "返信/対応フィルターに切り替えます。" };
+  if (/確認/.test(cmd) && /フィルター|filter|絞り/.test(cmd)) return { action: "switch-filter", filter: "notice", message: "確認フィルターに切り替えます。" };
+  if (/通知/.test(cmd) && /フィルター|filter|絞り/.test(cmd)) return { action: "switch-filter", filter: "skip", message: "通知フィルターに切り替えます。" };
+  if (/gemini/.test(cmd)) return { action: "switch-ai", provider: "gemini", message: "AIをGeminiに切り替えます。" };
+  if (/anthropic|claude/.test(cmd)) return { action: "switch-ai", provider: "anthropic", message: "AIをAnthropicに切り替えます。" };
+  if (/openai|gpt/.test(cmd)) return { action: "switch-ai", provider: "openai", message: "AIをOpenAIに切り替えます。" };
+  if (/grok|xai/.test(cmd)) return { action: "switch-ai", provider: "grok", message: "AIをGrokに切り替えます。" };
+  if (/設定|setup|config/.test(cmd)) return { action: "open-setup", message: "設定を開きます。" };
+  if (/同期|sync|更新|refresh/.test(cmd)) return { action: "sync", message: "メールを同期します。" };
+  if (/10件/.test(cmd)) return { action: "set-max", max: "10", message: "10件表示に変更します。" };
+  if (/20件/.test(cmd)) return { action: "set-max", max: "20", message: "20件表示に変更します。" };
+  if (/50件/.test(cmd)) return { action: "set-max", max: "50", message: "50件表示に変更します。" };
+  if (/500件/.test(cmd)) return { action: "set-max", max: "500", message: "500件表示に変更します。" };
+  if (/今年|year/.test(cmd)) return { action: "set-max", max: "year", message: "今年のメールを表示します。" };
+  return { action: "reply", message: "コマンドを理解できませんでした。例: 「就活タブを開く」「Geminiに切り替え」「メールを同期」" };
+}
+
 async function route(req, res) {
   const url = new URL(req.url, `http://localhost:${port}`);
   const state = await readState(req, res);
@@ -1025,26 +1004,37 @@ async function route(req, res) {
     if (req.method === "GET" && url.pathname === "/api/status") {
       activeAccount(state);
       await writeState(state);
-        sendJson(res, 200, {
-          googleConfigured: configuredGoogle(state),
-          openAIConfigured: configuredOpenAI(state),
-          savedConfig: {
-            googleClientId: Boolean(state.config.googleClientId),
-            googleClientSecret: Boolean(state.config.googleClientSecret),
-            openAIKey: Boolean(state.config.openAIKey),
-            openAIModel: state.config.openAIModel || "gpt-4o-mini",
-            geminiApiKey: Boolean(state.config.geminiApiKey),
-            anthropicApiKey: Boolean(state.config.anthropicApiKey),
-            grokApiKey: Boolean(state.config.grokApiKey)
-          },
-          configFromEnv: {
-            google: Boolean(env.GOOGLE_CLIENT_ID && env.GOOGLE_CLIENT_SECRET),
-            openAI: Boolean(env.OPENAI_API_KEY),
-            gemini: Boolean(env.GEMINI_API_KEY),
-            anthropic: Boolean(env.ANTHROPIC_API_KEY),
-            grok: Boolean(env.GROK_API_KEY || env.XAI_API_KEY)
-          },
-          aiConfigured: configuredAI(state),
+      const activeAiProvider = configuredGemini(state)
+        ? "Gemini"
+        : configuredAnthropic(state)
+          ? "Anthropic"
+          : configuredOpenAI(state)
+            ? "OpenAI"
+            : configuredGrok(state)
+              ? "Grok"
+              : null;
+      sendJson(res, 200, {
+        googleConfigured: configuredGoogle(state),
+        openAIConfigured: configuredOpenAI(state),
+        aiConfigured: configuredAI(state),
+        activeAiProvider,
+        savedConfig: {
+          googleClientId: Boolean(state.config.googleClientId),
+          googleClientSecret: Boolean(state.config.googleClientSecret),
+          openAIKey: Boolean(state.config.openAIKey),
+          openAIModel: state.config.openAIModel || "gpt-4o-mini",
+          geminiApiKey: Boolean(state.config.geminiApiKey),
+          anthropicApiKey: Boolean(state.config.anthropicApiKey),
+          grokApiKey: Boolean(state.config.grokApiKey),
+          preferredAiProvider: state.config.preferredAiProvider || ""
+        },
+        configFromEnv: {
+          google: Boolean(env.GOOGLE_CLIENT_ID && env.GOOGLE_CLIENT_SECRET),
+          openAI: Boolean(env.OPENAI_API_KEY),
+          gemini: Boolean(env.GEMINI_API_KEY),
+          anthropic: Boolean(env.ANTHROPIC_API_KEY),
+          grok: Boolean(env.GROK_API_KEY || env.XAI_API_KEY)
+        },
         gmailConnected: Boolean(state.google.tokens),
         email: state.google.email,
         activeEmail: state.google.activeEmail || state.google.email,
@@ -1083,33 +1073,48 @@ async function route(req, res) {
         googleClientSecret: body.googleClientSecret || state.config.googleClientSecret || "",
         openAIKey: body.openAIKey || state.config.openAIKey || "",
         openAIModel: body.openAIModel || state.config.openAIModel || "gpt-4o-mini",
-        geminiApiKey: body.geminiApiKey !== undefined ? body.geminiApiKey : (state.config.geminiApiKey || ""),
-        geminiModel: body.geminiModel || state.config.geminiModel || "",
-        anthropicApiKey: body.anthropicApiKey !== undefined ? body.anthropicApiKey : (state.config.anthropicApiKey || ""),
-        anthropicModel: body.anthropicModel || state.config.anthropicModel || "",
-        grokApiKey: body.grokApiKey !== undefined ? body.grokApiKey : (state.config.grokApiKey || ""),
-        grokModel: body.grokModel || state.config.grokModel || ""
+        geminiApiKey: body.geminiApiKey || state.config.geminiApiKey || "",
+        geminiModel: body.geminiModel || state.config.geminiModel || "gemini-2.5-flash",
+        grokApiKey: body.grokApiKey || state.config.grokApiKey || "",
+        grokModel: body.grokModel || state.config.grokModel || "grok-4",
+        anthropicApiKey: body.anthropicApiKey || state.config.anthropicApiKey || "",
+        anthropicModel: body.anthropicModel || state.config.anthropicModel || "claude-sonnet-4-6",
+        preferredAiProvider: body.preferredAiProvider !== undefined ? body.preferredAiProvider : (state.config.preferredAiProvider || "")
       };
       if (
         hasConnectionData(state) &&
         !body.googleClientId &&
         !body.googleClientSecret &&
         !body.openAIKey &&
+        !body.geminiApiKey &&
+        !body.grokApiKey &&
+        !body.anthropicApiKey &&
         !nextConfig.googleClientId &&
         !nextConfig.googleClientSecret &&
-        !nextConfig.openAIKey
+        !nextConfig.openAIKey &&
+        !nextConfig.geminiApiKey &&
+        !nextConfig.grokApiKey &&
+        !nextConfig.anthropicApiKey
       ) {
         const err = new Error("保存済みの接続設定を空欄で上書きしそうになったため、保存を止めました。");
         err.status = 409;
         throw err;
       }
-      state.config = {
-        ...nextConfig
-      };
+      state.config = { ...nextConfig };
       await writeState(state);
+      const activeAiProvider = configuredGemini(state)
+        ? "Gemini"
+        : configuredAnthropic(state)
+          ? "Anthropic"
+          : configuredOpenAI(state)
+            ? "OpenAI"
+            : configuredGrok(state)
+              ? "Grok"
+              : null;
       sendJson(res, 200, {
         googleConfigured: configuredGoogle(state),
-        openAIConfigured: configuredOpenAI(state)
+        openAIConfigured: configuredOpenAI(state),
+        activeAiProvider
       });
       return;
     }
@@ -1352,6 +1357,59 @@ async function route(req, res) {
         })
       });
       sendJson(res, 200, { draft });
+      return;
+    }
+
+    if (req.method === "POST" && url.pathname === "/api/ai-command") {
+      const { command } = await parseBody(req);
+      if (!command) { sendJson(res, 400, { error: "コマンドを入力してください。" }); return; }
+      const systemPrompt = `あなたはEmailAIアプリのコマンドインタープリターです。ユーザーの日本語コマンドを解析し、以下のJSON形式のみで返してください。マークダウンや説明文は不要です。
+
+利用可能なアクション:
+- { "action": "switch-tab", "tab": "inbox|starred|sent|drafts|important|unread|action|housing|career", "message": "説明" }
+- { "action": "switch-filter", "filter": "all|action|notice|skip", "message": "説明" }
+- { "action": "switch-ai", "provider": "gemini|anthropic|openai|grok", "message": "説明" }
+- { "action": "set-max", "max": "10|20|50|500|year|all", "message": "説明" }
+- { "action": "open-setup", "message": "説明" }
+- { "action": "sync", "message": "説明" }
+- { "action": "reply", "message": "できない・不明な場合の説明（100字以内）" }
+
+タブ名対応: 受信=inbox, スター=starred, 送信済み=sent, 下書き=drafts, 最重要=important, 未読=unread, 要対応=action, 住まい=housing, 就活=career
+フィルター: すべて=all, 返信/対応=action, 確認=notice, 通知=skip
+AIプロバイダー: Gemini=gemini, Anthropic/Claude=anthropic, OpenAI/GPT=openai, Grok=grok`;
+      let result = null;
+      try {
+        const answer = await chatComplete(state, [
+          { role: "system", content: systemPrompt },
+          { role: "user", content: command }
+        ], 0.1);
+        const text = (answer || "").trim().replace(/^```json\s*/i, "").replace(/^```\s*/i, "").replace(/```$/i, "").trim();
+        result = JSON.parse(text);
+      } catch {}
+      if (!result) result = fallbackCommandParse(command);
+      sendJson(res, 200, result);
+      return;
+    }
+
+    if (req.method === "POST" && url.pathname === "/api/send") {
+      const body = await parseBody(req);
+      const message = body.message;
+      const raw = draftRaw({
+        to: message.from.raw,
+        cc: "",
+        subject: message.subject || "",
+        body: body.reply,
+        inReplyTo: message.id
+      });
+      const sent = await gmailFetch(
+        withActiveAccount(state, message.accountEmail || state.google.activeEmail),
+        "/messages/send",
+        {
+          method: "POST",
+          body: JSON.stringify({ threadId: message.threadId, raw: encodeBase64Url(raw) })
+        }
+      );
+      sendJson(res, 200, { sent });
       return;
     }
 
