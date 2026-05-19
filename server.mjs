@@ -15,7 +15,7 @@ const sessionsDir = path.join(dataDir, "sessions");
 const port = Number(env.PORT || process.env.PORT || 8787);
 const host = env.HOST || process.env.HOST || "127.0.0.1";
 
-const gmailScopes = ["https://www.googleapis.com/auth/gmail.modify"];
+const gmailScopes = ["https://www.googleapis.com/auth/gmail.modify", "https://www.googleapis.com/auth/gmail.send"];
 
 const defaultState = {
   profile: {
@@ -256,6 +256,35 @@ function mergeState(base, next) {
     senders: { ...(next.senders || {}) },
     google,
     config: { ...base.config, ...(next.config || {}) }
+  };
+}
+
+
+function sessionBackup(state) {
+  return {
+    version: 1,
+    savedAt: new Date().toISOString(),
+    google: state.google,
+    profile: state.profile,
+    senders: state.senders
+  };
+}
+
+function validateSessionBackup(backup) {
+  if (!backup || typeof backup !== "object") throw new Error("復元データが見つかりません。");
+  const google = backup.google || {};
+  const hasAccount = Object.values(google.accounts || {}).some(
+    (account) => account?.tokens?.refresh_token || account?.tokens?.access_token
+  );
+  if (!google.tokens && !hasAccount) throw new Error("Gmail接続の復元データがありません。");
+  return {
+    google: {
+      ...defaultState.google,
+      ...google,
+      oauthState: null
+    },
+    profile: backup.profile || {},
+    senders: backup.senders || {}
   };
 }
 
@@ -878,7 +907,7 @@ async function extractCareerScheduleItems(state, messages) {
     .slice(0, 40)
     .map(({ message }, index) => ({ ...message, sourceIndex: index }));
 
-  if (!configuredOpenAI(state) || !candidates.length) return extractScheduleItems(candidates);
+  if (!configuredAI(state) || !candidates.length) return extractScheduleItems(candidates);
 
   const source = candidates.map((message) => ({
     sourceIndex: message.sourceIndex,
@@ -1073,6 +1102,33 @@ async function route(req, res) {
         // Fallback below is enough.
       }
       sendJson(res, 200, { url: candidates[0] || fallback, candidates });
+      return;
+    }
+
+
+    if (req.method === "GET" && url.pathname === "/api/session/backup") {
+      if (!state.google.tokens && !Object.keys(state.google.accounts || {}).length) {
+        sendJson(res, 200, { backup: null });
+        return;
+      }
+      sendJson(res, 200, { backup: sessionBackup(state) });
+      return;
+    }
+
+    if (req.method === "POST" && url.pathname === "/api/session/restore") {
+      const body = await parseBody(req);
+      const restored = validateSessionBackup(body.backup);
+      state.google = restored.google;
+      state.profile = { ...state.profile, ...restored.profile };
+      state.senders = { ...state.senders, ...restored.senders };
+      activeAccount(state);
+      await writeState(state);
+      sendJson(res, 200, {
+        restored: true,
+        gmailConnected: Boolean(state.google.tokens),
+        email: state.google.email,
+        accounts: accountsList(state)
+      });
       return;
     }
 
@@ -1291,7 +1347,7 @@ async function route(req, res) {
         .sort((a, b) => b.importance - a.importance || messageTime(b) - messageTime(a))
         .slice(0, 12);
       let digest = fallbackDigest(messages, period);
-      if (configuredOpenAI(state) && important.length) {
+      if (configuredAI(state) && important.length) {
         digest = await chatComplete(
           state,
           [
