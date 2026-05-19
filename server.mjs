@@ -719,50 +719,85 @@ function buildPrompt({ profile, sender, message, instruction }) {
   ];
 }
 
+async function chatComplete(state, messages, temperature = 0.35) {
+  // Gemini
+  if (configuredGemini(state)) {
+    try {
+      const config = geminiConfig(state);
+      const system = messages.find((m) => m.role === "system")?.content || "";
+      const userMessages = messages.filter((m) => m.role !== "system");
+      const contents = userMessages.map((m) => ({ role: m.role === "assistant" ? "model" : "user", parts: [{ text: m.content }] }));
+      const response = await fetch(
+        `https://generativelanguage.googleapis.com/v1beta/models/${config.model}:generateContent?key=${config.key}`,
+        {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            ...(system ? { systemInstruction: { parts: [{ text: system }] } } : {}),
+            contents,
+            generationConfig: { temperature, maxOutputTokens: 4096 }
+          })
+        }
+      );
+      const body = await response.json();
+      if (response.ok) return body.candidates?.[0]?.content?.parts?.[0]?.text?.trim() || "";
+    } catch {}
+  }
+
+  // Anthropic
+  if (configuredAnthropic(state)) {
+    try {
+      const config = anthropicConfig(state);
+      const system = messages.find((m) => m.role === "system")?.content || "";
+      const filtered = messages.filter((m) => m.role !== "system");
+      const response = await fetch("https://api.anthropic.com/v1/messages", {
+        method: "POST",
+        headers: { "content-type": "application/json", "x-api-key": config.key, "anthropic-version": "2023-06-01" },
+        body: JSON.stringify({ model: config.model, max_tokens: 4096, ...(system ? { system } : {}), messages: filtered })
+      });
+      const body = await response.json();
+      if (response.ok) return body.content?.[0]?.text?.trim() || "";
+    } catch {}
+  }
+
+  // OpenAI
+  if (configuredOpenAI(state)) {
+    const config = openAIConfig(state);
+    const response = await fetch("https://api.openai.com/v1/chat/completions", {
+      method: "POST",
+      headers: { authorization: `Bearer ${config.key}`, "content-type": "application/json" },
+      body: JSON.stringify({ model: config.model, messages, temperature })
+    });
+    const body = await response.json();
+    if (!response.ok) throw new Error(body.error?.message || "OpenAI request failed");
+    return body.choices?.[0]?.message?.content?.trim() || "";
+  }
+
+  // Grok
+  if (configuredGrok(state)) {
+    try {
+      const config = grokConfig(state);
+      const response = await fetch("https://api.x.ai/v1/chat/completions", {
+        method: "POST",
+        headers: { authorization: `Bearer ${config.key}`, "content-type": "application/json" },
+        body: JSON.stringify({ model: config.model, messages, temperature })
+      });
+      const body = await response.json();
+      if (response.ok) return body.choices?.[0]?.message?.content?.trim() || "";
+    } catch {}
+  }
+
+  return "";
+}
+
 async function generateReply(payload) {
-  const config = openAIConfig(payload.state);
-  if (!config.key) {
-    const err = new Error("OPENAI_API_KEYを設定してください。");
+  const messages = buildPrompt(payload);
+  if (!configuredAI(payload.state)) {
+    const err = new Error("AIサービスが設定されていません。設定からAPIキーを入力してください。");
     err.status = 400;
     throw err;
   }
-
-  const messages = buildPrompt(payload);
-  const response = await fetch("https://api.openai.com/v1/chat/completions", {
-    method: "POST",
-    headers: {
-      authorization: `Bearer ${config.key}`,
-      "content-type": "application/json"
-    },
-    body: JSON.stringify({
-      model: config.model,
-      messages,
-      temperature: 0.65
-    })
-  });
-  const body = await response.json();
-  if (!response.ok) throw new Error(body.error?.message || "OpenAI request failed");
-  return body.choices?.[0]?.message?.content?.trim() || "";
-}
-
-async function chatComplete(state, messages, temperature = 0.35) {
-  const config = openAIConfig(state);
-  if (!config.key) return "";
-  const response = await fetch("https://api.openai.com/v1/chat/completions", {
-    method: "POST",
-    headers: {
-      authorization: `Bearer ${config.key}`,
-      "content-type": "application/json"
-    },
-    body: JSON.stringify({
-      model: config.model,
-      messages,
-      temperature
-    })
-  });
-  const body = await response.json();
-  if (!response.ok) throw new Error(body.error?.message || "OpenAI request failed");
-  return body.choices?.[0]?.message?.content?.trim() || "";
+  return chatComplete(payload.state, messages, 0.65);
 }
 
 function messageTime(message) {
