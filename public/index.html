@@ -96,6 +96,16 @@
             Anthropic Model
             <input id="anthropicModel" value="claude-sonnet-4-6" />
           </label>
+          <label>
+            優先AIプロバイダー
+            <select id="preferredAiProvider">
+              <option value="">自動（設定済みを順に試す）</option>
+              <option value="gemini">Gemini 優先</option>
+              <option value="anthropic">Anthropic 優先</option>
+              <option value="openai">OpenAI 優先</option>
+              <option value="grok">Grok 優先</option>
+            </select>
+          </label>
         </div>
       </section>
 
