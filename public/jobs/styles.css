@@ -1009,7 +1009,8 @@ img { max-width: 100%; }
   background: var(--surface);
   border-top: 1px solid var(--border);
   z-index: 50;
-  padding: 6px 4px max(8px, env(safe-area-inset-bottom));
+  padding: 6px 4px 6px;
+  padding-bottom: calc(6px + env(safe-area-inset-bottom));
   grid-template-columns: repeat(5, 1fr);
   box-shadow: 0 -4px 16px rgba(0,0,0,0.06);
 }
@@ -1035,7 +1036,7 @@ img { max-width: 100%; }
   .sidebar { display: none; }
   .mobile-nav { display: grid; }
 
-  .view { padding: 16px 14px 80px; }
+  .view { padding: 16px 14px calc(80px + env(safe-area-inset-bottom)); }
   .view-header { flex-direction: column; gap: 10px; }
   .view-header .btn { width: 100%; justify-content: center; }
 
