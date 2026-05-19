@@ -32,8 +32,13 @@ let state = { companies: [], schedules: [] };
 let currentView = "dashboard";
 let currentCompanyId = null;
 let currentCompanyTab = "overview";
-let calYear = new Date().getFullYear();
-let calMonth = new Date().getMonth();
+function jstNow() {
+  // UTC+9時間を足してJSTを得る
+  return new Date(Date.now() + 9 * 60 * 60 * 1000);
+}
+
+let calYear = jstNow().getUTCFullYear();
+let calMonth = jstNow().getUTCMonth();
 let calSelectedDate = null;
 let filterStatus = "all";
 let searchQuery = "";
@@ -45,11 +50,13 @@ function uid() {
 }
 
 function now() {
-  return new Date().toISOString();
+  const d = jstNow();
+  return `${d.getUTCFullYear()}-${String(d.getUTCMonth()+1).padStart(2,"0")}-${String(d.getUTCDate()).padStart(2,"0")}T${String(d.getUTCHours()).padStart(2,"0")}:${String(d.getUTCMinutes()).padStart(2,"0")}:${String(d.getUTCSeconds()).padStart(2,"0")}+09:00`;
 }
 
 function today() {
-  return new Date().toISOString().slice(0, 10);
+  const d = jstNow();
+  return `${d.getUTCFullYear()}-${String(d.getUTCMonth()+1).padStart(2,"0")}-${String(d.getUTCDate()).padStart(2,"0")}`;
 }
 
 function fmtDate(iso) {
@@ -66,11 +73,11 @@ function fmtDateFull(iso) {
 
 function fmtDatetime(iso) {
   if (!iso) return "";
-  const d = new Date(iso);
-  const mo = d.getMonth() + 1;
-  const dd = d.getDate();
-  const h = d.getHours();
-  const mn = d.getMinutes();
+  const d = new Date(new Date(iso).getTime() + 9 * 60 * 60 * 1000);
+  const mo = d.getUTCMonth() + 1;
+  const dd = d.getUTCDate();
+  const h = d.getUTCHours();
+  const mn = d.getUTCMinutes();
   return `${mo}/${dd} ${String(h).padStart(2, "0")}:${String(mn).padStart(2, "0")}`;
 }
 
@@ -1440,9 +1447,9 @@ function calNext() {
 }
 
 function calToday() {
-  const d = new Date();
-  calYear = d.getFullYear();
-  calMonth = d.getMonth();
+  const d = jstNow();
+  calYear = d.getUTCFullYear();
+  calMonth = d.getUTCMonth();
   calSelectedDate = null;
   renderCalendar();
 }
@@ -1601,7 +1608,7 @@ async function runAnalysis() {
         <div class="card mb-4">
           <div class="card-header">
             <span class="card-title">AI分析結果</span>
-            <span style="font-size:11px;color:var(--text-3)">${new Date().toLocaleString("ja-JP")}</span>
+            <span style="font-size:11px;color:var(--text-3)">${jstNow().toLocaleString("ja-JP")}</span>
           </div>
           <div class="card-body">
             <div class="ai-result md-content">${markdownToHtml(res.analysis)}</div>

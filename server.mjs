@@ -1036,8 +1036,12 @@ async function route(req, res) {
           },
           configFromEnv: {
             google: Boolean(env.GOOGLE_CLIENT_ID && env.GOOGLE_CLIENT_SECRET),
-            openAI: Boolean(env.OPENAI_API_KEY)
-        },
+            openAI: Boolean(env.OPENAI_API_KEY),
+            gemini: Boolean(env.GEMINI_API_KEY),
+            anthropic: Boolean(env.ANTHROPIC_API_KEY),
+            grok: Boolean(env.GROK_API_KEY || env.XAI_API_KEY)
+          },
+          aiConfigured: configuredAI(state),
         gmailConnected: Boolean(state.google.tokens),
         email: state.google.email,
         activeEmail: state.google.activeEmail || state.google.email,
