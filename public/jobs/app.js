@@ -40,6 +40,7 @@ function jstNow() {
 let calYear = jstNow().getUTCFullYear();
 let calMonth = jstNow().getUTCMonth();
 let calSelectedDate = null;
+let companyBackView = "companies";
 let filterStatus = "all";
 let searchQuery = "";
 let saveTimer = null;
@@ -243,6 +244,9 @@ function handleRoute() {
   if (!viewEl) return;
   viewEl.classList.add("active");
 
+  if (view === "company") {
+    companyBackView = currentView === "calendar" ? "calendar" : "companies";
+  }
   currentView = view;
 
   if (view === "dashboard") renderDashboard();
@@ -583,9 +587,9 @@ function renderCompany() {
     <div class="detail-header">
       <div class="detail-header-top">
         <div>
-          <button class="btn btn-ghost btn-sm" onclick="navigate('#companies')" style="margin-bottom:8px;padding-left:4px">
+          <button class="btn btn-ghost btn-sm" onclick="navigate('#${companyBackView}')" style="margin-bottom:8px;padding-left:4px">
             <svg viewBox="0 0 20 20" fill="currentColor" style="width:14px;height:14px"><path fill-rule="evenodd" d="M9.707 16.707a1 1 0 01-1.414 0l-6-6a1 1 0 010-1.414l6-6a1 1 0 011.414 1.414L5.414 9H17a1 1 0 110 2H5.414l4.293 4.293a1 1 0 010 1.414z" clip-rule="evenodd"/></svg>
-            企業一覧
+            ${companyBackView === "calendar" ? "カレンダー" : "企業一覧"}
           </button>
           <div class="detail-company-name">${escHtml(c.name)}</div>
           <div class="detail-company-sub">${escHtml(c.industry || "")}${c.url ? ` · <a href="${escHtml(c.url)}" target="_blank" rel="noreferrer" style="color:var(--accent)">${escHtml(c.url)}</a>` : ""}</div>
@@ -706,7 +710,10 @@ function renderCompanyEvents(c) {
           <div class="event-meta">${fmtDateFull(evt.date)}${evt.time ? " " + evt.time : ""} · ${escHtml(evt.type)}</div>
         </div>
         <div class="event-actions">
-          <button class="btn btn-ghost btn-sm" onclick="deleteEvent('${evt.id}','company')">
+          <button class="btn btn-ghost btn-sm" onclick="openEditEventModal('${evt.id}','company')" title="編集">
+            <svg viewBox="0 0 20 20" fill="currentColor" style="width:14px;height:14px"><path d="M13.586 3.586a2 2 0 112.828 2.828l-.793.793-2.828-2.828.793-.793zM11.379 5.793L3 14.172V17h2.828l8.38-8.379-2.83-2.828z"/></svg>
+          </button>
+          <button class="btn btn-ghost btn-sm" onclick="deleteEvent('${evt.id}','company')" title="削除">
             <svg viewBox="0 0 20 20" fill="currentColor" style="width:14px;height:14px"><path fill-rule="evenodd" d="M9 2a1 1 0 00-.894.553L7.382 4H4a1 1 0 000 2v10a2 2 0 002 2h8a2 2 0 002-2V6a1 1 0 100-2h-3.382l-.724-1.447A1 1 0 0011 2H9zM7 8a1 1 0 012 0v6a1 1 0 11-2 0V8zm5-1a1 1 0 00-1 1v6a1 1 0 102 0V8a1 1 0 00-1-1z" clip-rule="evenodd"/></svg>
           </button>
         </div>
@@ -1450,7 +1457,11 @@ function renderEventList(evts) {
           ${evt.url ? `<div class="mt-2"><a href="${escHtml(evt.url)}" target="_blank" rel="noopener" class="event-url-btn">🔗 ${escHtml(evt.urlLabel || "リンクを開く")}</a></div>` : ""}
         </div>
         <div class="event-actions">
-          ${!evt.id.startsWith("iv-") ? `<button class="btn btn-ghost btn-sm" onclick="deleteEvent('${evt.id}','calendar')">
+          ${!evt.id.startsWith("iv-") ? `
+          <button class="btn btn-ghost btn-sm" onclick="openEditEventModal('${evt.id}','calendar')" title="編集">
+            <svg viewBox="0 0 20 20" fill="currentColor" style="width:14px;height:14px"><path d="M13.586 3.586a2 2 0 112.828 2.828l-.793.793-2.828-2.828.793-.793zM11.379 5.793L3 14.172V17h2.828l8.38-8.379-2.83-2.828z"/></svg>
+          </button>
+          <button class="btn btn-ghost btn-sm" onclick="deleteEvent('${evt.id}','calendar')" title="削除">
             <svg viewBox="0 0 20 20" fill="currentColor" style="width:14px;height:14px"><path fill-rule="evenodd" d="M9 2a1 1 0 00-.894.553L7.382 4H4a1 1 0 000 2v10a2 2 0 002 2h8a2 2 0 002-2V6a1 1 0 100-2h-3.382l-.724-1.447A1 1 0 0011 2H9zM7 8a1 1 0 012 0v6a1 1 0 11-2 0V8zm5-1a1 1 0 00-1 1v6a1 1 0 102 0V8a1 1 0 00-1-1z" clip-rule="evenodd"/></svg>
           </button>` : ""}
         </div>
@@ -1460,7 +1471,15 @@ function renderEventList(evts) {
 }
 
 function selectCalDate(date) {
-  calSelectedDate = date;
+  if (calSelectedDate === date) {
+    openDayDetailModal(date);
+  } else {
+    calSelectedDate = date;
+    renderCalendar();
+  }
+}
+
+function openDayDetailModal(date) {
   const allEvents = [
     ...state.schedules,
     ...state.companies.flatMap((c) =>
@@ -1477,9 +1496,13 @@ function selectCalDate(date) {
     ? dayEvts.map((evt) => {
         const co = evt.companyId ? state.companies.find(c => c.id === evt.companyId) : null;
         const col = EVENT_COLORS[evt.type] || "#6b7280";
+        const isEditable = !evt.id.startsWith("iv-");
         return `
           <div class="event-detail-card" style="border-left:3px solid ${col};padding:14px 16px;background:var(--surface-2);border-radius:8px;margin-bottom:12px">
-            <div style="font-size:15px;font-weight:700;margin-bottom:6px">${escHtml(evt.title)}</div>
+            <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:6px">
+              <div style="font-size:15px;font-weight:700">${escHtml(evt.title)}</div>
+              ${isEditable ? `<button class="btn btn-ghost btn-sm" style="padding:2px 8px;font-size:12px;flex-shrink:0" onclick="closeModal();setTimeout(()=>openEditEventModal('${evt.id}','calendar'),100)">編集</button>` : ""}
+            </div>
             <div style="font-size:12.5px;color:var(--text-3);margin-bottom:8px;display:flex;gap:12px;flex-wrap:wrap">
               <span>${fmtDateFull(evt.date)}${evt.time ? " " + evt.time : ""}</span>
               <span class="chip chip-${evt.type === '面接' ? 'int1' : 'entry'}" style="font-size:11px">${escHtml(evt.type)}</span>
@@ -1594,6 +1617,85 @@ function saveEvent() {
   toast("予定を追加しました");
   if (currentView === "calendar") renderCalendar();
   else if (currentView === "dashboard") renderDashboard();
+}
+
+function openEditEventModal(id, source) {
+  const evt = state.schedules.find((s) => s.id === id);
+  if (!evt) return;
+
+  const body = `
+    <div class="form-group">
+      <label class="form-label">タイトル <span style="color:var(--red)">*</span></label>
+      <input class="form-input" id="m-evt-title" value="${escHtml(evt.title)}" />
+    </div>
+    <div class="two-col mt-3">
+      <div class="form-group">
+        <label class="form-label">種別</label>
+        <select class="form-select" id="m-evt-type">
+          ${EVENT_TYPES.map((t) => `<option value="${t}" ${evt.type === t ? "selected" : ""}>${t}</option>`).join("")}
+        </select>
+      </div>
+      <div class="form-group">
+        <label class="form-label">企業（任意）</label>
+        <select class="form-select" id="m-evt-company">
+          <option value="">なし</option>
+          ${state.companies.map((c) => `<option value="${c.id}" ${c.id === evt.companyId ? "selected" : ""}>${escHtml(c.name)}</option>`).join("")}
+        </select>
+      </div>
+    </div>
+    <div class="two-col mt-3">
+      <div class="form-group">
+        <label class="form-label">日付 <span style="color:var(--red)">*</span></label>
+        <input class="form-input" id="m-evt-date" type="date" value="${escHtml(evt.date)}" />
+      </div>
+      <div class="form-group">
+        <label class="form-label">時刻</label>
+        <input class="form-input" id="m-evt-time" type="time" value="${escHtml(evt.time || "")}" />
+      </div>
+    </div>
+    <div class="form-group mt-3">
+      <label class="form-label">メモ</label>
+      <textarea class="form-textarea" id="m-evt-notes" rows="2">${escHtml(evt.notes || "")}</textarea>
+    </div>
+    <div class="form-group mt-3">
+      <label class="form-label">URL</label>
+      <input class="form-input" id="m-evt-url" type="url" value="${escHtml(evt.url || "")}" placeholder="https://..." />
+    </div>
+    <div class="form-group mt-3">
+      <label class="form-label">URL表示名</label>
+      <input class="form-input" id="m-evt-urlLabel" type="text" value="${escHtml(evt.urlLabel || "")}" placeholder="例: Zoom, 説明会ページ" />
+    </div>
+  `;
+  openModal("予定を編集", body, `
+    <button class="btn btn-secondary" onclick="closeModal()">キャンセル</button>
+    <button class="btn btn-primary" onclick="saveEditedEvent('${id}','${source}')">保存</button>
+  `);
+  document.getElementById("m-evt-title")?.focus();
+}
+
+function saveEditedEvent(id, source) {
+  const evt = state.schedules.find((s) => s.id === id);
+  if (!evt) return;
+
+  const title = document.getElementById("m-evt-title")?.value.trim();
+  const date = document.getElementById("m-evt-date")?.value;
+  if (!title || !date) { toast("タイトルと日付を入力してください"); return; }
+
+  evt.title = title;
+  evt.type = document.getElementById("m-evt-type")?.value || evt.type;
+  evt.companyId = document.getElementById("m-evt-company")?.value || null;
+  evt.date = date;
+  evt.time = document.getElementById("m-evt-time")?.value || "";
+  evt.notes = document.getElementById("m-evt-notes")?.value.trim() || "";
+  evt.url = document.getElementById("m-evt-url")?.value.trim() || "";
+  evt.urlLabel = document.getElementById("m-evt-urlLabel")?.value.trim() || "";
+  evt.updatedAt = now();
+
+  scheduleSave();
+  closeModal();
+  toast("予定を更新しました");
+  if (source === "calendar") renderCalendar();
+  else if (source === "company") renderCompany();
 }
 
 function deleteEvent(id, source) {
