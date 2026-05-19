@@ -40,7 +40,7 @@ const defaultState = {
     openAIKey: "",
     openAIModel: "gpt-4o-mini",
     geminiApiKey: "",
-    geminiModel: "gemini-2.5-flash",
+    geminiModel: "gemini-2.5-pro",
     grokApiKey: "",
     grokModel: "grok-4",
     anthropicApiKey: "",
@@ -297,7 +297,7 @@ function openAIConfig(state) {
 function geminiConfig(state) {
   return {
     key: env.GEMINI_API_KEY || state.config.geminiApiKey,
-    model: env.GEMINI_MODEL || state.config.geminiModel || "gemini-2.5-flash"
+    model: env.GEMINI_MODEL || state.config.geminiModel || "gemini-2.5-pro"
   };
 }
 
@@ -1078,7 +1078,7 @@ async function route(req, res) {
         openAIKey: body.openAIKey || state.config.openAIKey || "",
         openAIModel: body.openAIModel || state.config.openAIModel || "gpt-4o-mini",
         geminiApiKey: body.geminiApiKey || state.config.geminiApiKey || "",
-        geminiModel: body.geminiModel || state.config.geminiModel || "gemini-2.5-flash",
+        geminiModel: body.geminiModel || state.config.geminiModel || "gemini-2.5-pro",
         grokApiKey: body.grokApiKey || state.config.grokApiKey || "",
         grokModel: body.grokModel || state.config.grokModel || "grok-4",
         anthropicApiKey: body.anthropicApiKey || state.config.anthropicApiKey || "",
