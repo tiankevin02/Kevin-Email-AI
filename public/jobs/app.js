@@ -33,11 +33,12 @@ let currentView = "dashboard";
 let currentCompanyId = null;
 let currentCompanyTab = "overview";
 function jstNow() {
-  return new Date(new Date().toLocaleString("en-US", { timeZone: "Asia/Tokyo" }));
+  // UTC+9時間を足してJSTを得る
+  return new Date(Date.now() + 9 * 60 * 60 * 1000);
 }
 
-let calYear = jstNow().getFullYear();
-let calMonth = jstNow().getMonth();
+let calYear = jstNow().getUTCFullYear();
+let calMonth = jstNow().getUTCMonth();
 let calSelectedDate = null;
 let filterStatus = "all";
 let searchQuery = "";
@@ -50,12 +51,12 @@ function uid() {
 
 function now() {
   const d = jstNow();
-  return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}T${String(d.getHours()).padStart(2,"0")}:${String(d.getMinutes()).padStart(2,"0")}:${String(d.getSeconds()).padStart(2,"0")}+09:00`;
+  return `${d.getUTCFullYear()}-${String(d.getUTCMonth()+1).padStart(2,"0")}-${String(d.getUTCDate()).padStart(2,"0")}T${String(d.getUTCHours()).padStart(2,"0")}:${String(d.getUTCMinutes()).padStart(2,"0")}:${String(d.getUTCSeconds()).padStart(2,"0")}+09:00`;
 }
 
 function today() {
   const d = jstNow();
-  return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`;
+  return `${d.getUTCFullYear()}-${String(d.getUTCMonth()+1).padStart(2,"0")}-${String(d.getUTCDate()).padStart(2,"0")}`;
 }
 
 function fmtDate(iso) {
@@ -72,11 +73,11 @@ function fmtDateFull(iso) {
 
 function fmtDatetime(iso) {
   if (!iso) return "";
-  const d = new Date(new Date(iso).toLocaleString("en-US", { timeZone: "Asia/Tokyo" }));
-  const mo = d.getMonth() + 1;
-  const dd = d.getDate();
-  const h = d.getHours();
-  const mn = d.getMinutes();
+  const d = new Date(new Date(iso).getTime() + 9 * 60 * 60 * 1000);
+  const mo = d.getUTCMonth() + 1;
+  const dd = d.getUTCDate();
+  const h = d.getUTCHours();
+  const mn = d.getUTCMinutes();
   return `${mo}/${dd} ${String(h).padStart(2, "0")}:${String(mn).padStart(2, "0")}`;
 }
 
@@ -1447,8 +1448,8 @@ function calNext() {
 
 function calToday() {
   const d = jstNow();
-  calYear = d.getFullYear();
-  calMonth = d.getMonth();
+  calYear = d.getUTCFullYear();
+  calMonth = d.getUTCMonth();
   calSelectedDate = null;
   renderCalendar();
 }
