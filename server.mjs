@@ -1016,18 +1016,16 @@ async function route(req, res) {
       sendJson(res, 200, {
         googleConfigured: configuredGoogle(state),
         openAIConfigured: configuredOpenAI(state),
-        aiConfigured: {
-          gemini: configuredGemini(state),
-          anthropic: configuredAnthropic(state),
-          openAI: configuredOpenAI(state),
-          grok: configuredGrok(state)
-        },
+        aiConfigured: configuredAI(state),
         activeAiProvider,
         savedConfig: {
           googleClientId: Boolean(state.config.googleClientId),
           googleClientSecret: Boolean(state.config.googleClientSecret),
           openAIKey: Boolean(state.config.openAIKey),
           openAIModel: state.config.openAIModel || "gpt-4o-mini",
+          geminiApiKey: Boolean(state.config.geminiApiKey),
+          anthropicApiKey: Boolean(state.config.anthropicApiKey),
+          grokApiKey: Boolean(state.config.grokApiKey),
           preferredAiProvider: state.config.preferredAiProvider || ""
         },
         configFromEnv: {

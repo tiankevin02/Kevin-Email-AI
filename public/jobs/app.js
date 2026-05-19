@@ -1643,12 +1643,24 @@ function renderSettings() {
       <div class="settings-section">
         <div class="settings-section-header">
           <div class="settings-section-title">AIサービス設定</div>
-          <div class="settings-section-desc">以下のいずれか1つを設定すれば動作します</div>
+          <div class="settings-section-desc">いずれか1つを設定すれば動作します（Gemini推奨）</div>
         </div>
-        <div class="settings-section-body" id="settings-ai-form">
-          <div style="font-size:12.5px;color:var(--text-3);padding:8px 0">設定はメールAIの設定（<a href="/?setup=true" style="color:var(--accent)">設定ページ</a>）で管理されます。Gemini、OpenAI、Grok、Anthropic のいずれかのAPIキーを入力してください。</div>
-          <div id="settings-ai-status">読み込み中...</div>
-          <a href="/?setup=true" class="btn btn-secondary">メールAI設定を開く</a>
+        <div class="settings-section-body">
+          <div id="settings-ai-status" style="margin-bottom:12px">読み込み中...</div>
+          <div class="form-group">
+            <label class="form-label">Gemini APIキー</label>
+            <div class="form-hint">Google AI Studio から取得（無料）</div>
+            <input type="password" class="form-input mt-1" id="ai-gemini-key" placeholder="AIzaSy..." autocomplete="off" />
+          </div>
+          <div class="form-group">
+            <label class="form-label">Anthropic APIキー</label>
+            <input type="password" class="form-input mt-1" id="ai-anthropic-key" placeholder="sk-ant-..." autocomplete="off" />
+          </div>
+          <div class="form-group">
+            <label class="form-label">OpenAI APIキー</label>
+            <input type="password" class="form-input mt-1" id="ai-openai-key" placeholder="sk-..." autocomplete="off" />
+          </div>
+          <button class="btn btn-primary" onclick="saveAiKeys()">保存</button>
         </div>
       </div>
 
@@ -1708,9 +1720,33 @@ async function loadAiStatus() {
     ].filter((p) => p.configured);
     el.innerHTML = providers.length
       ? `<div style="display:flex;gap:8px;flex-wrap:wrap">${providers.map((p) => `<span class="chip chip-offer">${p.name} ✓</span>`).join("")}</div>`
-      : `<span class="chip chip-reject">AIキー未設定</span>`;
+      : `<span class="chip chip-reject">AIキー未設定 — 下のフォームにキーを入力してください</span>`;
   } catch {
     el.innerHTML = `<span style="font-size:12.5px;color:var(--text-3)">状態取得に失敗しました</span>`;
+  }
+}
+
+async function saveAiKeys() {
+  const geminiApiKey = document.getElementById("ai-gemini-key")?.value?.trim() || "";
+  const anthropicApiKey = document.getElementById("ai-anthropic-key")?.value?.trim() || "";
+  const openAIKey = document.getElementById("ai-openai-key")?.value?.trim() || "";
+  if (!geminiApiKey && !anthropicApiKey && !openAIKey) {
+    toast("少なくとも1つのAPIキーを入力してください", 3000);
+    return;
+  }
+  try {
+    const body = {};
+    if (geminiApiKey) body.geminiApiKey = geminiApiKey;
+    if (anthropicApiKey) body.anthropicApiKey = anthropicApiKey;
+    if (openAIKey) body.openAIKey = openAIKey;
+    await fetchJson("/api/config", { method: "POST", body: JSON.stringify(body) });
+    toast("APIキーを保存しました");
+    document.getElementById("ai-gemini-key").value = "";
+    document.getElementById("ai-anthropic-key").value = "";
+    document.getElementById("ai-openai-key").value = "";
+    loadAiStatus();
+  } catch (e) {
+    toast(e.message || "保存に失敗しました", 5000);
   }
 }
 
