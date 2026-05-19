@@ -148,11 +148,23 @@ async function fetchJson(path, opts = {}) {
   return body;
 }
 
+const STORAGE_KEY = "shukatsu-ai-v1";
+
 async function loadData() {
   try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if (raw) {
+      const data = JSON.parse(raw);
+      state.companies = data.companies || [];
+      state.schedules = data.schedules || [];
+      return;
+    }
     const data = await fetchJson("/api/jobs");
     state.companies = data.companies || [];
     state.schedules = data.schedules || [];
+    if (state.companies.length || state.schedules.length) {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify({ companies: state.companies, schedules: state.schedules }));
+    }
   } catch {
     state.companies = [];
     state.schedules = [];
@@ -166,10 +178,7 @@ function scheduleSave() {
 
 async function saveData() {
   try {
-    await fetchJson("/api/jobs", {
-      method: "POST",
-      body: JSON.stringify({ companies: state.companies, schedules: state.schedules }),
-    });
+    localStorage.setItem(STORAGE_KEY, JSON.stringify({ companies: state.companies, schedules: state.schedules }));
   } catch {
     toast("保存に失敗しました");
   }
@@ -1788,7 +1797,7 @@ async function resetData() {
   if (!confirm("すべての就活データを削除します。本当によろしいですか？\nこの操作は取り消せません。")) return;
   state.companies = [];
   state.schedules = [];
-  await saveData();
+  localStorage.removeItem(STORAGE_KEY);
   toast("データをリセットしました");
   navigate("#dashboard");
 }
