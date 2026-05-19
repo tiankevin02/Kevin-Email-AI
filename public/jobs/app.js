@@ -32,8 +32,12 @@ let state = { companies: [], schedules: [] };
 let currentView = "dashboard";
 let currentCompanyId = null;
 let currentCompanyTab = "overview";
-let calYear = new Date().getFullYear();
-let calMonth = new Date().getMonth();
+function jstNow() {
+  return new Date(new Date().toLocaleString("en-US", { timeZone: "Asia/Tokyo" }));
+}
+
+let calYear = jstNow().getFullYear();
+let calMonth = jstNow().getMonth();
 let calSelectedDate = null;
 let filterStatus = "all";
 let searchQuery = "";
@@ -45,11 +49,13 @@ function uid() {
 }
 
 function now() {
-  return new Date().toISOString();
+  const d = jstNow();
+  return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}T${String(d.getHours()).padStart(2,"0")}:${String(d.getMinutes()).padStart(2,"0")}:${String(d.getSeconds()).padStart(2,"0")}+09:00`;
 }
 
 function today() {
-  return new Date().toISOString().slice(0, 10);
+  const d = jstNow();
+  return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`;
 }
 
 function fmtDate(iso) {
@@ -66,7 +72,7 @@ function fmtDateFull(iso) {
 
 function fmtDatetime(iso) {
   if (!iso) return "";
-  const d = new Date(iso);
+  const d = new Date(new Date(iso).toLocaleString("en-US", { timeZone: "Asia/Tokyo" }));
   const mo = d.getMonth() + 1;
   const dd = d.getDate();
   const h = d.getHours();
@@ -1440,7 +1446,7 @@ function calNext() {
 }
 
 function calToday() {
-  const d = new Date();
+  const d = jstNow();
   calYear = d.getFullYear();
   calMonth = d.getMonth();
   calSelectedDate = null;
@@ -1601,7 +1607,7 @@ async function runAnalysis() {
         <div class="card mb-4">
           <div class="card-header">
             <span class="card-title">AI分析結果</span>
-            <span style="font-size:11px;color:var(--text-3)">${new Date().toLocaleString("ja-JP")}</span>
+            <span style="font-size:11px;color:var(--text-3)">${jstNow().toLocaleString("ja-JP")}</span>
           </div>
           <div class="card-body">
             <div class="ai-result md-content">${markdownToHtml(res.analysis)}</div>
