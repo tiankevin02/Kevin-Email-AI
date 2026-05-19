@@ -44,7 +44,7 @@ const defaultState = {
     grokApiKey: "",
     grokModel: "grok-4",
     anthropicApiKey: "",
-    anthropicModel: "claude-opus-4-5"
+    anthropicModel: "claude-sonnet-4-6"
   }
 };
 
@@ -150,7 +150,10 @@ function hasConnectionData(state) {
       Object.keys(state?.google?.accounts || {}).length ||
       state?.config?.googleClientId ||
       state?.config?.googleClientSecret ||
-      state?.config?.openAIKey
+      state?.config?.openAIKey ||
+      state?.config?.geminiApiKey ||
+      state?.config?.grokApiKey ||
+      state?.config?.anthropicApiKey
   );
 }
 
@@ -186,10 +189,21 @@ async function writeState(state) {
       Object.keys(current?.google?.accounts || {}).length ||
       current?.config?.googleClientId ||
       current?.config?.googleClientSecret ||
-      current?.config?.openAIKey;
+      current?.config?.openAIKey ||
+      current?.config?.geminiApiKey ||
+      current?.config?.grokApiKey ||
+      current?.config?.anthropicApiKey;
     if (hasSavedSecrets) {
-      const backupFile = path.join(path.dirname(targetFile), `app.${new Date().toISOString().replace(/[:.]/g, "-")}.bak.json`);
+      const backupDir = path.dirname(targetFile);
+      const backupFile = path.join(backupDir, `app.${new Date().toISOString().replace(/[:.]/g, "-")}.bak.json`);
       await fs.writeFile(backupFile, `${JSON.stringify(current, null, 2)}\n`);
+      const allBackups = (await fs.readdir(backupDir))
+        .filter((f) => /^app\..+\.bak\.json$/.test(f))
+        .sort()
+        .reverse();
+      for (const old of allBackups.slice(5)) {
+        await fs.unlink(path.join(backupDir, old)).catch(() => {});
+      }
     }
   } catch {
     // No previous state to back up yet.
@@ -1025,18 +1039,34 @@ async function route(req, res) {
     if (req.method === "GET" && url.pathname === "/api/status") {
       activeAccount(state);
       await writeState(state);
-        sendJson(res, 200, {
-          googleConfigured: configuredGoogle(state),
-          openAIConfigured: configuredOpenAI(state),
-          savedConfig: {
-            googleClientId: Boolean(state.config.googleClientId),
-            googleClientSecret: Boolean(state.config.googleClientSecret),
-            openAIKey: Boolean(state.config.openAIKey),
-            openAIModel: state.config.openAIModel || "gpt-4o-mini"
-          },
-          configFromEnv: {
-            google: Boolean(env.GOOGLE_CLIENT_ID && env.GOOGLE_CLIENT_SECRET),
-            openAI: Boolean(env.OPENAI_API_KEY)
+      const activeAiProvider = configuredGemini(state)
+        ? "Gemini"
+        : configuredAnthropic(state)
+          ? "Anthropic"
+          : configuredOpenAI(state)
+            ? "OpenAI"
+            : configuredGrok(state)
+              ? "Grok"
+              : null;
+      sendJson(res, 200, {
+        googleConfigured: configuredGoogle(state),
+        openAIConfigured: configuredOpenAI(state),
+        aiConfigured: {
+          gemini: configuredGemini(state),
+          anthropic: configuredAnthropic(state),
+          openAI: configuredOpenAI(state),
+          grok: configuredGrok(state)
+        },
+        activeAiProvider,
+        savedConfig: {
+          googleClientId: Boolean(state.config.googleClientId),
+          googleClientSecret: Boolean(state.config.googleClientSecret),
+          openAIKey: Boolean(state.config.openAIKey),
+          openAIModel: state.config.openAIModel || "gpt-4o-mini"
+        },
+        configFromEnv: {
+          google: Boolean(env.GOOGLE_CLIENT_ID && env.GOOGLE_CLIENT_SECRET),
+          openAI: Boolean(env.OPENAI_API_KEY)
         },
         gmailConnected: Boolean(state.google.tokens),
         email: state.google.email,
@@ -1075,28 +1105,48 @@ async function route(req, res) {
         googleClientId: body.googleClientId || state.config.googleClientId || "",
         googleClientSecret: body.googleClientSecret || state.config.googleClientSecret || "",
         openAIKey: body.openAIKey || state.config.openAIKey || "",
-        openAIModel: body.openAIModel || state.config.openAIModel || "gpt-4o-mini"
+        openAIModel: body.openAIModel || state.config.openAIModel || "gpt-4o-mini",
+        geminiApiKey: body.geminiApiKey || state.config.geminiApiKey || "",
+        geminiModel: body.geminiModel || state.config.geminiModel || "gemini-2.5-flash",
+        grokApiKey: body.grokApiKey || state.config.grokApiKey || "",
+        grokModel: body.grokModel || state.config.grokModel || "grok-4",
+        anthropicApiKey: body.anthropicApiKey || state.config.anthropicApiKey || "",
+        anthropicModel: body.anthropicModel || state.config.anthropicModel || "claude-sonnet-4-6"
       };
       if (
         hasConnectionData(state) &&
         !body.googleClientId &&
         !body.googleClientSecret &&
         !body.openAIKey &&
+        !body.geminiApiKey &&
+        !body.grokApiKey &&
+        !body.anthropicApiKey &&
         !nextConfig.googleClientId &&
         !nextConfig.googleClientSecret &&
-        !nextConfig.openAIKey
+        !nextConfig.openAIKey &&
+        !nextConfig.geminiApiKey &&
+        !nextConfig.grokApiKey &&
+        !nextConfig.anthropicApiKey
       ) {
         const err = new Error("保存済みの接続設定を空欄で上書きしそうになったため、保存を止めました。");
         err.status = 409;
         throw err;
       }
-      state.config = {
-        ...nextConfig
-      };
+      state.config = { ...nextConfig };
       await writeState(state);
+      const activeAiProvider = configuredGemini(state)
+        ? "Gemini"
+        : configuredAnthropic(state)
+          ? "Anthropic"
+          : configuredOpenAI(state)
+            ? "OpenAI"
+            : configuredGrok(state)
+              ? "Grok"
+              : null;
       sendJson(res, 200, {
         googleConfigured: configuredGoogle(state),
-        openAIConfigured: configuredOpenAI(state)
+        openAIConfigured: configuredOpenAI(state),
+        activeAiProvider
       });
       return;
     }
@@ -1339,6 +1389,28 @@ async function route(req, res) {
         })
       });
       sendJson(res, 200, { draft });
+      return;
+    }
+
+    if (req.method === "POST" && url.pathname === "/api/send") {
+      const body = await parseBody(req);
+      const message = body.message;
+      const raw = draftRaw({
+        to: message.from.raw,
+        cc: "",
+        subject: message.subject || "",
+        body: body.reply,
+        inReplyTo: message.id
+      });
+      const sent = await gmailFetch(
+        withActiveAccount(state, message.accountEmail || state.google.activeEmail),
+        "/messages/send",
+        {
+          method: "POST",
+          body: JSON.stringify({ threadId: message.threadId, raw: encodeBase64Url(raw) })
+        }
+      );
+      sendJson(res, 200, { sent });
       return;
     }
 
