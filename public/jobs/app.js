@@ -151,24 +151,32 @@ async function fetchJson(path, opts = {}) {
 const STORAGE_KEY = "shukatsu-ai-v1";
 
 async function loadData() {
+  // localStorageを即時反映（速度優先）
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
     if (raw) {
-      const data = JSON.parse(raw);
+      const cached = JSON.parse(raw);
+      state.companies = cached.companies || [];
+      state.schedules = cached.schedules || [];
+    }
+  } catch {}
+
+  // サーバーから最新データを取得して同期（クロスデバイス）
+  try {
+    const data = await fetchJson("/api/jobs");
+    const serverTs = data.updatedAt || 0;
+    let localTs = 0;
+    try { localTs = JSON.parse(localStorage.getItem(STORAGE_KEY) || "{}").updatedAt || 0; } catch {}
+
+    if (serverTs >= localTs && (data.companies?.length || data.schedules?.length)) {
       state.companies = data.companies || [];
       state.schedules = data.schedules || [];
-      return;
+      localStorage.setItem(STORAGE_KEY, JSON.stringify({ companies: state.companies, schedules: state.schedules, updatedAt: serverTs }));
+    } else if (state.companies.length || state.schedules.length) {
+      // localStorageの方が新しければサーバーに反映
+      await _pushToServer();
     }
-    const data = await fetchJson("/api/jobs");
-    state.companies = data.companies || [];
-    state.schedules = data.schedules || [];
-    if (state.companies.length || state.schedules.length) {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify({ companies: state.companies, schedules: state.schedules }));
-    }
-  } catch {
-    state.companies = [];
-    state.schedules = [];
-  }
+  } catch {}
 }
 
 function scheduleSave() {
@@ -176,11 +184,25 @@ function scheduleSave() {
   saveTimer = setTimeout(saveData, 800);
 }
 
+async function _pushToServer() {
+  const updatedAt = Date.now();
+  await fetchJson("/api/jobs", {
+    method: "POST",
+    body: JSON.stringify({ companies: state.companies, schedules: state.schedules, updatedAt }),
+  });
+  return updatedAt;
+}
+
 async function saveData() {
   try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify({ companies: state.companies, schedules: state.schedules }));
+    const updatedAt = await _pushToServer();
+    localStorage.setItem(STORAGE_KEY, JSON.stringify({ companies: state.companies, schedules: state.schedules, updatedAt }));
   } catch {
-    toast("保存に失敗しました");
+    // サーバー保存失敗時はlocalStorageだけ更新
+    try {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify({ companies: state.companies, schedules: state.schedules, updatedAt: Date.now() }));
+    } catch {}
+    toast("オフライン保存しました（次回オンライン時に同期されます）", 3000);
   }
 }
 
@@ -1425,6 +1447,7 @@ function renderEventList(evts) {
           <div class="event-title">${escHtml(evt.title)}</div>
           <div class="event-meta">${fmtDateFull(evt.date)}${evt.time ? " " + evt.time : ""}${co ? " · " + escHtml(co) : ""} · ${escHtml(evt.type)}</div>
           ${evt.notes ? `<div class="text-sm text-muted mt-2">${escHtml(evt.notes)}</div>` : ""}
+          ${evt.url ? `<div class="mt-2"><a href="${escHtml(evt.url)}" target="_blank" rel="noopener" class="event-url-btn">🔗 ${escHtml(evt.urlLabel || "リンクを開く")}</a></div>` : ""}
         </div>
         <div class="event-actions">
           ${!evt.id.startsWith("iv-") ? `<button class="btn btn-ghost btn-sm" onclick="deleteEvent('${evt.id}','calendar')">
@@ -1437,8 +1460,42 @@ function renderEventList(evts) {
 }
 
 function selectCalDate(date) {
-  calSelectedDate = calSelectedDate === date ? null : date;
-  renderCalendar();
+  calSelectedDate = date;
+  const allEvents = [
+    ...state.schedules,
+    ...state.companies.flatMap((c) =>
+      (c.interviews || []).filter((iv) => iv.date).map((iv) => ({
+        id: `iv-${iv.id}`, companyId: c.id,
+        title: `${c.name} ${iv.type}`, type: "面接",
+        date: iv.date, time: iv.time || "", notes: iv.location || "", url: "", urlLabel: ""
+      }))
+    ),
+  ];
+  const dayEvts = allEvents.filter((e) => e.date === date);
+
+  const body = dayEvts.length
+    ? dayEvts.map((evt) => {
+        const co = evt.companyId ? state.companies.find(c => c.id === evt.companyId) : null;
+        const col = EVENT_COLORS[evt.type] || "#6b7280";
+        return `
+          <div class="event-detail-card" style="border-left:3px solid ${col};padding:14px 16px;background:var(--surface-2);border-radius:8px;margin-bottom:12px">
+            <div style="font-size:15px;font-weight:700;margin-bottom:6px">${escHtml(evt.title)}</div>
+            <div style="font-size:12.5px;color:var(--text-3);margin-bottom:8px;display:flex;gap:12px;flex-wrap:wrap">
+              <span>${fmtDateFull(evt.date)}${evt.time ? " " + evt.time : ""}</span>
+              <span class="chip chip-${evt.type === '面接' ? 'int1' : 'entry'}" style="font-size:11px">${escHtml(evt.type)}</span>
+            </div>
+            ${co ? `<div style="margin-bottom:8px"><button class="btn btn-ghost btn-sm" style="padding:2px 8px;font-size:12.5px" onclick="closeModal();navigate('#company/${co.id}')">🏢 ${escHtml(co.name)}</button></div>` : ""}
+            ${evt.url ? `<div style="margin-bottom:8px"><a href="${escHtml(evt.url)}" target="_blank" rel="noopener" class="event-url-btn">🔗 ${escHtml(evt.urlLabel || "リンクを開く")}</a></div>` : ""}
+            ${evt.notes ? `<div style="font-size:13px;color:var(--text-2)">${escHtml(evt.notes)}</div>` : ""}
+          </div>
+        `;
+      }).join("")
+    : `<p class="text-muted" style="text-align:center;padding:16px 0">この日の予定はありません</p>`;
+
+  openModal(fmtDateFull(date) + " の予定", body, `
+    <button class="btn btn-secondary" onclick="closeModal()">閉じる</button>
+    <button class="btn btn-primary" onclick="closeModal();setTimeout(()=>openAddEventModal(null),100)">＋ 予定を追加</button>
+  `);
 }
 
 function calPrev() {
@@ -1498,6 +1555,14 @@ function openAddEventModal(companyId) {
       <label class="form-label">メモ</label>
       <textarea class="form-textarea" id="m-evt-notes" rows="2" placeholder="場所・URL・注意事項など"></textarea>
     </div>
+    <div class="form-group mt-3">
+      <label class="form-label">URL</label>
+      <input class="form-input" id="m-evt-url" type="url" placeholder="https://..." />
+    </div>
+    <div class="form-group mt-3">
+      <label class="form-label">URL表示名</label>
+      <input class="form-input" id="m-evt-urlLabel" type="text" placeholder="例: Zoom, 説明会ページ" />
+    </div>
   `;
   openModal("予定を追加", body, `
     <button class="btn btn-secondary" onclick="closeModal()">キャンセル</button>
@@ -1519,6 +1584,8 @@ function saveEvent() {
     date,
     time: document.getElementById("m-evt-time")?.value || "",
     notes: document.getElementById("m-evt-notes")?.value.trim() || "",
+    url: document.getElementById("m-evt-url")?.value.trim() || "",
+    urlLabel: document.getElementById("m-evt-urlLabel")?.value.trim() || "",
     createdAt: now(),
   });
 
