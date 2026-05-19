@@ -10,6 +10,7 @@ const env = loadEnv(path.join(__dirname, ".env"));
 const publicDir = path.join(__dirname, "public");
 const dataDir = env.DATA_DIR || path.join(__dirname, "data");
 const dataFile = path.join(dataDir, "app.json");
+const jobsDataFile = path.join(dataDir, "jobs.json");
 const sessionsDir = path.join(dataDir, "sessions");
 const port = Number(env.PORT || process.env.PORT || 8787);
 const host = env.HOST || process.env.HOST || "127.0.0.1";
@@ -41,7 +42,9 @@ const defaultState = {
     geminiApiKey: "",
     geminiModel: "gemini-2.5-flash",
     grokApiKey: "",
-    grokModel: "grok-4"
+    grokModel: "grok-4",
+    anthropicApiKey: "",
+    anthropicModel: "claude-opus-4-5"
   }
 };
 
@@ -307,8 +310,120 @@ function configuredGrok(state) {
   return Boolean(grokConfig(state).key);
 }
 
+function anthropicConfig(state) {
+  return {
+    key: env.ANTHROPIC_API_KEY || state.config.anthropicApiKey,
+    model: env.ANTHROPIC_MODEL || state.config.anthropicModel || "claude-opus-4-5"
+  };
+}
+
+function configuredAnthropic(state) {
+  return Boolean(anthropicConfig(state).key);
+}
+
 function configuredAI(state) {
-  return configuredOpenAI(state) || configuredGemini(state) || configuredGrok(state);
+  return configuredOpenAI(state) || configuredGemini(state) || configuredGrok(state) || configuredAnthropic(state);
+}
+
+async function readJobsData() {
+  try {
+    return JSON.parse(await fs.readFile(jobsDataFile, "utf8"));
+  } catch {
+    return { companies: [], schedules: [] };
+  }
+}
+
+async function writeJobsData(data) {
+  await fs.mkdir(path.dirname(jobsDataFile), { recursive: true });
+  await fs.writeFile(jobsDataFile, `${JSON.stringify(data, null, 2)}\n`);
+}
+
+async function jobsAiChat(state, systemPrompt, userContent) {
+  const errors = [];
+
+  if (configuredGemini(state)) {
+    try {
+      const config = geminiConfig(state);
+      const response = await fetch(
+        `https://generativelanguage.googleapis.com/v1beta/models/${config.model}:generateContent?key=${config.key}`,
+        {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            systemInstruction: { parts: [{ text: systemPrompt }] },
+            contents: [{ role: "user", parts: [{ text: userContent }] }],
+            generationConfig: { temperature: 0.7, maxOutputTokens: 4096 }
+          })
+        }
+      );
+      const body = await response.json();
+      if (response.ok) return body.candidates?.[0]?.content?.parts?.[0]?.text?.trim() || "";
+      errors.push(`Gemini: ${body.error?.message || response.status}`);
+    } catch (e) { errors.push(`Gemini: ${e.message}`); }
+  }
+
+  if (configuredAnthropic(state)) {
+    try {
+      const config = anthropicConfig(state);
+      const response = await fetch("https://api.anthropic.com/v1/messages", {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          "x-api-key": config.key,
+          "anthropic-version": "2023-06-01"
+        },
+        body: JSON.stringify({
+          model: config.model,
+          max_tokens: 4096,
+          system: systemPrompt,
+          messages: [{ role: "user", content: userContent }]
+        })
+      });
+      const body = await response.json();
+      if (response.ok) return body.content?.[0]?.text?.trim() || "";
+      errors.push(`Anthropic: ${body.error?.message || response.status}`);
+    } catch (e) { errors.push(`Anthropic: ${e.message}`); }
+  }
+
+  if (configuredOpenAI(state)) {
+    try {
+      const config = openAIConfig(state);
+      const response = await fetch("https://api.openai.com/v1/chat/completions", {
+        method: "POST",
+        headers: { authorization: `Bearer ${config.key}`, "content-type": "application/json" },
+        body: JSON.stringify({
+          model: config.model,
+          messages: [{ role: "system", content: systemPrompt }, { role: "user", content: userContent }],
+          temperature: 0.7
+        })
+      });
+      const body = await response.json();
+      if (response.ok) return body.choices?.[0]?.message?.content?.trim() || "";
+      errors.push(`OpenAI: ${body.error?.message || response.status}`);
+    } catch (e) { errors.push(`OpenAI: ${e.message}`); }
+  }
+
+  if (configuredGrok(state)) {
+    try {
+      const config = grokConfig(state);
+      const response = await fetch("https://api.x.ai/v1/chat/completions", {
+        method: "POST",
+        headers: { authorization: `Bearer ${config.key}`, "content-type": "application/json" },
+        body: JSON.stringify({
+          model: config.model,
+          messages: [{ role: "system", content: systemPrompt }, { role: "user", content: userContent }],
+          temperature: 0.7
+        })
+      });
+      const body = await response.json();
+      if (response.ok) return body.choices?.[0]?.message?.content?.trim() || "";
+      errors.push(`Grok: ${body.error?.message || response.status}`);
+    } catch (e) { errors.push(`Grok: ${e.message}`); }
+  }
+
+  const err = new Error(errors.length ? `AI処理に失敗しました: ${errors.join(" / ")}` : "AIサービスが設定されていません。設定からAPIキーを入力してください。");
+  err.status = 400;
+  throw err;
 }
 
 function redirect(res, location) {
@@ -1192,8 +1307,185 @@ async function route(req, res) {
       return;
     }
 
+    if (req.method === "GET" && url.pathname === "/api/jobs") {
+      const data = await readJobsData();
+      sendJson(res, 200, data);
+      return;
+    }
+
+    if (req.method === "POST" && url.pathname === "/api/jobs") {
+      const body = await parseBody(req);
+      await writeJobsData({ companies: body.companies || [], schedules: body.schedules || [] });
+      sendJson(res, 200, { ok: true });
+      return;
+    }
+
+    if (req.method === "POST" && url.pathname === "/api/jobs/ai/es-review") {
+      const { companyName, question, answer } = await parseBody(req);
+      if (!companyName || !question || !answer) { sendJson(res, 400, { error: "企業名・設問・回答を入力してください。" }); return; }
+      const system = `あなたは${companyName}の人事採用担当です。エントリーシートの書類選考を行います。
+
+まず${companyName}の企業理念・価値観・求める人材像をあなたの知識で整理し、そのペルソナに基づいてESを評価・添削してください。
+
+【評価観点】
+1. 企業との適合性（カルチャーフィット）
+2. 自己分析の深さと具体性
+3. 論理構成（結論→根拠→具体例）
+4. 表現力・語彙の適切さ
+5. 独自性・インパクト
+
+【出力形式（マークダウン）】
+## ${companyName}について（求める人材像）
+（企業の特徴と求める人物像を2〜3行で）
+
+## 評価
+**良かった点**
+- （2〜3点、具体的に）
+
+**改善が必要な点**
+- （2〜3点、具体的に）
+
+## 添削後の例文
+（改善版の回答例を提示）
+
+## 総評
+（100字程度の総合コメント）`;
+      const review = await jobsAiChat(state, system, `【設問】${question}\n\n【回答】\n${answer}`);
+      sendJson(res, 200, { review });
+      return;
+    }
+
+    if (req.method === "POST" && url.pathname === "/api/jobs/ai/webtest") {
+      const { companyName } = await parseBody(req);
+      if (!companyName) { sendJson(res, 400, { error: "企業名を入力してください。" }); return; }
+      const system = "あなたは就職活動の専門家です。企業のWEBテスト（適性検査）に関する詳しい情報を提供します。";
+      const user = `${companyName}のWEBテストについてマークダウンで以下の形式で教えてください：
+
+## ${companyName}のWEBテスト情報
+
+### テスト種類
+（例: SPI3テストセンター形式、TG-WEB、GAB、CUBIC など）
+
+### 出題科目・内容
+（言語・非言語・構造的把握力など）
+
+### 受験形式
+（テストセンター/自宅受験/会場）
+
+### 難易度・特徴
+（難しい科目、よく出るパターン）
+
+### 対策方法
+（おすすめの参考書・練習サイト）
+
+### 注意事項
+（制限時間・計算機可否など）
+
+※不確かな情報は「要確認」と記載してください。`;
+      const info = await jobsAiChat(state, system, user);
+      sendJson(res, 200, { info });
+      return;
+    }
+
+    if (req.method === "POST" && url.pathname === "/api/jobs/ai/interview-tips") {
+      const { companyName, interviewType } = await parseBody(req);
+      if (!companyName) { sendJson(res, 400, { error: "企業名を入力してください。" }); return; }
+      const system = "あなたは就職活動支援の専門家です。企業の面接情報と対策を詳しく提供します。";
+      const user = `${companyName}の${interviewType || "面接"}についてマークダウンで以下の形式でまとめてください：
+
+## ${companyName}の面接情報
+
+### 面接の形式・雰囲気
+（個人/グループ、雰囲気、面接官の特徴など）
+
+### よく聞かれる質問（10問程度）
+- （箇条書き）
+
+### 企業が重視するポイント
+（この企業特有の評価基準）
+
+### 逆質問のコツ
+（おすすめの逆質問例）
+
+### 対策のポイント
+（この企業の面接を通過するための具体的アドバイス）
+
+※体験談・レビューサイトの情報を参考にした推測を含みます。`;
+      const tips = await jobsAiChat(state, system, user);
+      sendJson(res, 200, { tips });
+      return;
+    }
+
+    if (req.method === "POST" && url.pathname === "/api/jobs/ai/interview-feedback") {
+      const { companyName, interviewType, experience, questionsAsked } = await parseBody(req);
+      if (!experience) { sendJson(res, 400, { error: "面接体験を入力してください。" }); return; }
+      const system = "あなたは就職活動のプロコーチです。面接体験を分析し、具体的なフィードバックを提供します。";
+      const user = `以下の面接体験についてマークダウンでフィードバックしてください。
+
+【企業】${companyName || "不明"}　【種別】${interviewType || "面接"}
+【聞かれた質問】${questionsAsked || "（記載なし）"}
+【体験・感想】${experience}
+
+## 面接体験のフィードバック
+
+### 良かった点
+- （2〜3点）
+
+### 改善できる点
+- （2〜3点）
+
+### 次の面接に向けたアドバイス
+（具体的な行動提案）
+
+### 主要な質問への回答改善案
+（主要な質問についての改善アドバイス）
+
+### 総評
+（100字程度）`;
+      const feedback = await jobsAiChat(state, system, user);
+      sendJson(res, 200, { feedback });
+      return;
+    }
+
+    if (req.method === "POST" && url.pathname === "/api/jobs/ai/analysis") {
+      const { companies, schedules } = await parseBody(req);
+      const byStatus = {};
+      (companies || []).forEach((c) => { byStatus[c.status] = (byStatus[c.status] || 0) + 1; });
+      const today = new Date().toISOString().slice(0, 10);
+      const upcoming = (schedules || []).filter((s) => s.date >= today).length;
+      const system = "あなたは就職活動のプロコーチです。就活データを分析し、具体的なアドバイスを提供します。";
+      const user = `以下の就活データを分析してマークダウンでフィードバックしてください。
+
+【登録企業数】${(companies || []).length}社
+【ステータス別】${JSON.stringify(byStatus)}
+【今後の予定】${upcoming}件
+【企業一覧】${(companies || []).map((c) => `${c.name}(${c.status})`).join("、")}
+
+## 就活進捗分析
+
+### 現在の状況
+（客観的な進捗サマリー）
+
+### 強み・うまくいっている点
+- （具体的に）
+
+### 課題・改善が必要な点
+- （具体的に）
+
+### 今週やるべきこと
+1. （優先順位付きで3〜5項目）
+
+### 長期的な戦略アドバイス
+（就活全体の戦略）`;
+      const analysis = await jobsAiChat(state, system, user);
+      sendJson(res, 200, { analysis });
+      return;
+    }
+
     if (req.method === "GET") {
-      const pathname = url.pathname === "/" ? "/index.html" : url.pathname;
+      const pathname = url.pathname === "/" ? "/index.html"
+        : (url.pathname === "/jobs" || url.pathname === "/jobs/") ? "/jobs/index.html"
+        : url.pathname;
       const safePath = path.normalize(path.join(publicDir, pathname));
       if (!safePath.startsWith(publicDir)) {
         sendText(res, 403, "Forbidden");
