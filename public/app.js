@@ -27,7 +27,14 @@ function saveSetupDraft() {
       googleClientId: $("googleClientId").value,
       googleClientSecret: $("googleClientSecret").value,
       openAIKey: $("openAIKey").value,
-      openAIModel: $("openAIModel").value
+      openAIModel: $("openAIModel").value,
+      geminiApiKey: $("geminiApiKey").value,
+      geminiModel: $("geminiModel").value,
+      grokApiKey: $("grokApiKey").value,
+      grokModel: $("grokModel").value,
+      anthropicApiKey: $("anthropicApiKey").value,
+      anthropicModel: $("anthropicModel").value,
+      preferredAiProvider: $("preferredAiProvider").value
     })
   );
 }
@@ -38,9 +45,16 @@ function restoreSetupDraft() {
     googleClientId: draft.googleClientId,
     googleClientSecret: draft.googleClientSecret,
     openAIKey: draft.openAIKey,
-    openAIModel: draft.openAIModel
+    openAIModel: draft.openAIModel,
+    geminiApiKey: draft.geminiApiKey,
+    geminiModel: draft.geminiModel,
+    grokApiKey: draft.grokApiKey,
+    grokModel: draft.grokModel,
+    anthropicApiKey: draft.anthropicApiKey,
+    anthropicModel: draft.anthropicModel,
+    preferredAiProvider: draft.preferredAiProvider
   })) {
-    if (value && !$(id).value) $(id).value = value;
+    if (value !== undefined && $(id) && !$(id).value) $(id).value = value;
   }
 }
 
@@ -105,16 +119,26 @@ function classifyMessage(message) {
 
 function visibleMessages() {
   if (state.filter === "all") return state.messages;
+  if (state.filter === "action") {
+    return state.messages.filter((message) => {
+      const key = classifyMessage(message).key;
+      return key === "action" || key === "critical";
+    });
+  }
   return state.messages.filter((message) => classifyMessage(message).key === state.filter);
 }
 
 async function loadStatus() {
   state.status = await api("/api/status");
+  const aiLabel = state.status.activeAiProvider ? ` / AI: ${state.status.activeAiProvider}` : "";
   $("connectionText").textContent = state.status.gmailConnected
-    ? `${state.status.email} と接続済み`
+    ? `${state.status.email} と接続済み${aiLabel}`
     : state.status.googleConfigured
       ? "Gmailはまだ接続されていません"
       : "Google OAuth情報を設定してください";
+  if ($("preferredAiProvider") && state.status.savedConfig?.preferredAiProvider !== undefined) {
+    $("preferredAiProvider").value = state.status.savedConfig.preferredAiProvider;
+  }
   $("connectButton").textContent = state.status.gmailConnected ? "再接続" : "Gmail接続";
   $("setupPanel").classList.toggle("hidden", state.status.googleConfigured && !new URLSearchParams(location.search).has("setup"));
   $("setupGuide").classList.toggle("hidden", state.status.gmailConnected);
@@ -159,7 +183,14 @@ async function saveConfig() {
         googleClientId: $("googleClientId").value,
         googleClientSecret: $("googleClientSecret").value,
         openAIKey: $("openAIKey").value,
-        openAIModel: $("openAIModel").value || "gpt-4o-mini"
+        openAIModel: $("openAIModel").value || "gpt-4o-mini",
+        geminiApiKey: $("geminiApiKey").value,
+        geminiModel: $("geminiModel").value || "gemini-2.5-flash",
+        grokApiKey: $("grokApiKey").value,
+        grokModel: $("grokModel").value || "grok-4",
+        anthropicApiKey: $("anthropicApiKey") ? $("anthropicApiKey").value : "",
+        anthropicModel: $("anthropicModel") ? $("anthropicModel").value || "claude-sonnet-4-6" : "claude-sonnet-4-6",
+        preferredAiProvider: $("preferredAiProvider") ? $("preferredAiProvider").value : ""
       })
     });
     await loadStatus();
@@ -384,6 +415,9 @@ function buildCalendar(items) {
     grouped.get(key).push(item);
   }
 
+  const now = new Date();
+  const todayStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
+
   const months = Array.from(grouped.keys()).sort((a, b) => b.localeCompare(a));
   const monthHtml = months
     .map((key) => {
@@ -400,9 +434,10 @@ function buildCalendar(items) {
         const day = index + 1;
         const date = `${key}-${String(day).padStart(2, "0")}`;
         const dayItems = itemsByDate.get(date) || [];
+        const isToday = date === todayStr;
         return `
-          <div class="calendarCell ${dayItems.length ? "hasEvents" : ""}">
-            <div class="dayNumber">${day}</div>
+          <div class="calendarCell ${dayItems.length ? "hasEvents" : ""} ${isToday ? "today" : ""}">
+            <div class="dayNumber ${isToday ? "todayNumber" : ""}">${day}</div>
             <div class="dayEvents">
               ${dayItems
                 .slice(0, 4)
@@ -608,6 +643,67 @@ async function saveDraft() {
   }
 }
 
+async function runAiCommand() {
+  const input = $("aiCommandInput").value.trim();
+  if (!input) return;
+  const button = $("aiCommandButton");
+  setBusy(button, true, "反映");
+  try {
+    const body = await api("/api/ai-command", {
+      method: "POST",
+      body: JSON.stringify({ command: input })
+    });
+    applyCommand(body);
+  } catch (error) {
+    toast(error.message);
+  } finally {
+    setBusy(button, false, "反映");
+  }
+}
+
+function applyCommand(cmd) {
+  const message = cmd.message || "コマンドを実行しました。";
+  switch (cmd.action) {
+    case "switch-tab": {
+      const button = document.querySelector(`.folderButton[data-tab="${cmd.tab}"]`);
+      if (button) { button.click(); $("aiCommandInput").value = ""; }
+      else toast(`タブ「${cmd.tab}」が見つかりません。`);
+      break;
+    }
+    case "switch-filter": {
+      const button = document.querySelector(`.triageButton[data-filter="${cmd.filter}"]`);
+      if (button) { button.click(); $("aiCommandInput").value = ""; }
+      break;
+    }
+    case "switch-ai": {
+      if ($("preferredAiProvider")) {
+        $("preferredAiProvider").value = cmd.provider;
+        saveConfig().then(() => { $("aiCommandInput").value = ""; });
+      }
+      break;
+    }
+    case "set-max": {
+      $("maxInput").value = cmd.max;
+      $("aiCommandInput").value = "";
+      break;
+    }
+    case "open-setup": {
+      $("setupPanel").classList.remove("hidden");
+      $("setupPanel").scrollIntoView({ behavior: "smooth" });
+      $("aiCommandInput").value = "";
+      break;
+    }
+    case "sync": {
+      loadMessages();
+      $("aiCommandInput").value = "";
+      break;
+    }
+    default:
+      break;
+  }
+  toast(message);
+}
+
 $("saveProfileButton").addEventListener("click", saveProfile);
 $("saveConfigButton").addEventListener("click", saveConfig);
 $("mobileShareButton").addEventListener("click", openMobileShare);
@@ -620,8 +716,12 @@ $("scheduleButton").addEventListener("click", loadSchedule);
 $("digestTodayButton").addEventListener("click", () => loadDigest("today", "Today"));
 $("digestWeekButton").addEventListener("click", () => loadDigest("week", "Week"));
 $("digestMonthButton").addEventListener("click", () => loadDigest("month", "Month"));
-["googleClientId", "googleClientSecret", "openAIKey", "openAIModel"].forEach((id) => {
-  $(id).addEventListener("input", saveSetupDraft);
+["googleClientId", "googleClientSecret", "openAIKey", "openAIModel", "geminiApiKey", "geminiModel", "grokApiKey", "grokModel"].forEach((id) => {
+  $(id)?.addEventListener("input", saveSetupDraft);
+});
+$("aiCommandButton").addEventListener("click", runAiCommand);
+$("aiCommandInput").addEventListener("keydown", (event) => {
+  if (event.key === "Enter") runAiCommand();
 });
 let controlsManualOpen = false;
 
