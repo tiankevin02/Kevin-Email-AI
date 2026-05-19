@@ -424,6 +424,10 @@ async function tryProviderChat(provider, state, messages, temperature) {
   }
 }
 
+async function callGemini(state, messages, temperature) {
+  return tryProviderChat("gemini", state, messages, temperature);
+}
+
 async function jobsAiChat(state, systemPrompt, userContent) {
   const messages = [{ role: "system", content: systemPrompt }, { role: "user", content: userContent }];
   for (const provider of aiProviderOrder(state)) {
