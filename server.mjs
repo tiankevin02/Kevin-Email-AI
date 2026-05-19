@@ -382,7 +382,8 @@ async function tryProviderChat(provider, state, messages, temperature) {
         }
       );
       const body = await response.json();
-      return response.ok ? (body.candidates?.[0]?.content?.parts?.[0]?.text?.trim() || "") : null;
+      if (!response.ok) throw new Error(`Gemini(${config.model}): ${body.error?.message || response.status}`);
+      return body.candidates?.[0]?.content?.parts?.[0]?.text?.trim() || "";
     }
     case "anthropic": {
       if (!configuredAnthropic(state)) return null;
@@ -395,7 +396,8 @@ async function tryProviderChat(provider, state, messages, temperature) {
         body: JSON.stringify({ model: config.model, max_tokens: 4096, ...(system ? { system } : {}), messages: filtered })
       });
       const body = await response.json();
-      return response.ok ? (body.content?.[0]?.text?.trim() || "") : null;
+      if (!response.ok) throw new Error(`Anthropic: ${body.error?.message || response.status}`);
+      return body.content?.[0]?.text?.trim() || "";
     }
     case "openai": {
       if (!configuredOpenAI(state)) return null;
@@ -406,7 +408,8 @@ async function tryProviderChat(provider, state, messages, temperature) {
         body: JSON.stringify({ model: config.model, messages, temperature })
       });
       const body = await response.json();
-      return response.ok ? (body.choices?.[0]?.message?.content?.trim() || "") : null;
+      if (!response.ok) throw new Error(`OpenAI: ${body.error?.message || response.status}`);
+      return body.choices?.[0]?.message?.content?.trim() || "";
     }
     case "grok": {
       if (!configuredGrok(state)) return null;
@@ -417,7 +420,8 @@ async function tryProviderChat(provider, state, messages, temperature) {
         body: JSON.stringify({ model: config.model, messages, temperature })
       });
       const body = await response.json();
-      return response.ok ? (body.choices?.[0]?.message?.content?.trim() || "") : null;
+      if (!response.ok) throw new Error(`Grok: ${body.error?.message || response.status}`);
+      return body.choices?.[0]?.message?.content?.trim() || "";
     }
     default:
       return null;
@@ -430,13 +434,14 @@ async function callGemini(state, messages, temperature) {
 
 async function jobsAiChat(state, systemPrompt, userContent) {
   const messages = [{ role: "system", content: systemPrompt }, { role: "user", content: userContent }];
+  const errors = [];
   for (const provider of aiProviderOrder(state)) {
     try {
       const result = await tryProviderChat(provider, state, messages, 0.7);
       if (result !== null) return result;
-    } catch {}
+    } catch (e) { errors.push(e.message); }
   }
-  const err = new Error("AIサービスが設定されていません。設定からAPIキーを入力してください。");
+  const err = new Error(errors.length ? `AI処理に失敗しました: ${errors.join(" / ")}` : "AIサービスが設定されていません。設定からAPIキーを入力してください。");
   err.status = 400;
   throw err;
 }
@@ -739,7 +744,9 @@ async function chatComplete(state, messages, temperature = 0.35) {
     try {
       const result = await tryProviderChat(provider, state, messages, temperature);
       if (result !== null) return result;
-    } catch {}
+    } catch (e) {
+      console.error(`[AI] ${e.message}`);
+    }
   }
   return "";
 }
