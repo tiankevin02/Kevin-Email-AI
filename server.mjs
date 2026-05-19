@@ -1032,7 +1032,10 @@ async function route(req, res) {
             googleClientId: Boolean(state.config.googleClientId),
             googleClientSecret: Boolean(state.config.googleClientSecret),
             openAIKey: Boolean(state.config.openAIKey),
-            openAIModel: state.config.openAIModel || "gpt-4o-mini"
+            openAIModel: state.config.openAIModel || "gpt-4o-mini",
+            geminiApiKey: Boolean(state.config.geminiApiKey),
+            anthropicApiKey: Boolean(state.config.anthropicApiKey),
+            grokApiKey: Boolean(state.config.grokApiKey)
           },
           configFromEnv: {
             google: Boolean(env.GOOGLE_CLIENT_ID && env.GOOGLE_CLIENT_SECRET),
@@ -1079,7 +1082,13 @@ async function route(req, res) {
         googleClientId: body.googleClientId || state.config.googleClientId || "",
         googleClientSecret: body.googleClientSecret || state.config.googleClientSecret || "",
         openAIKey: body.openAIKey || state.config.openAIKey || "",
-        openAIModel: body.openAIModel || state.config.openAIModel || "gpt-4o-mini"
+        openAIModel: body.openAIModel || state.config.openAIModel || "gpt-4o-mini",
+        geminiApiKey: body.geminiApiKey !== undefined ? body.geminiApiKey : (state.config.geminiApiKey || ""),
+        geminiModel: body.geminiModel || state.config.geminiModel || "",
+        anthropicApiKey: body.anthropicApiKey !== undefined ? body.anthropicApiKey : (state.config.anthropicApiKey || ""),
+        anthropicModel: body.anthropicModel || state.config.anthropicModel || "",
+        grokApiKey: body.grokApiKey !== undefined ? body.grokApiKey : (state.config.grokApiKey || ""),
+        grokModel: body.grokModel || state.config.grokModel || ""
       };
       if (
         hasConnectionData(state) &&
