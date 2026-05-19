@@ -8,6 +8,11 @@
     <meta name="apple-mobile-web-app-title" content="Email AI" />
     <meta name="apple-mobile-web-app-status-bar-style" content="default" />
     <title>Email AI Gmail</title>
+    <script>
+      if (location.protocol === "file:") {
+        location.replace("http://127.0.0.1:8790/");
+      }
+    </script>
     <link rel="manifest" href="/manifest.webmanifest" />
     <link rel="icon" href="/icons/icon.svg" type="image/svg+xml" />
     <link rel="apple-touch-icon" href="/icons/icon.svg" />
@@ -67,6 +72,22 @@
             OpenAI Model
             <input id="openAIModel" value="gpt-4o-mini" />
           </label>
+          <label>
+            Gemini API Key
+            <input id="geminiApiKey" autocomplete="off" type="password" />
+          </label>
+          <label>
+            Gemini Model
+            <input id="geminiModel" value="gemini-2.5-flash" />
+          </label>
+          <label>
+            Grok API Key
+            <input id="grokApiKey" autocomplete="off" type="password" />
+          </label>
+          <label>
+            Grok Model
+            <input id="grokModel" value="grok-4" />
+          </label>
         </div>
       </section>
 
@@ -109,6 +130,9 @@
           <section class="toolbar">
             <div class="folderTabs" aria-label="メールボックス">
               <button class="folderButton active" data-tab="inbox" data-title="受信トレイ" data-query="in:inbox newer_than:30d">受信</button>
+              <button class="folderButton" data-tab="starred" data-title="スター付き" data-query="is:starred newer_than:365d">スター</button>
+              <button class="folderButton" data-tab="sent" data-title="送信済み" data-query="in:sent newer_than:365d">送信済み</button>
+              <button class="folderButton" data-tab="drafts" data-title="下書き" data-query="in:drafts newer_than:365d">下書き</button>
               <button class="folderButton criticalTab" data-tab="important" data-title="最重要!" data-query="newer_than:90d (subject:重要 OR subject:至急 OR subject:締切 OR subject:期限 OR subject:面接 OR subject:選考 OR subject:適性検査 OR subject:WEBテスト OR subject:インターン OR from:saiyo OR from:recruit)">最重要!</button>
               <button class="folderButton" data-tab="unread" data-title="未読" data-query="is:unread newer_than:30d">未読</button>
               <button class="folderButton" data-tab="action" data-title="要対応候補" data-query="newer_than:30d (from:fudosan OR from:saiyo OR subject:締切 OR subject:ご案内 OR subject:お問い合わせ)">要対応</button>
@@ -116,7 +140,7 @@
               <button class="folderButton" data-tab="career" data-title="就活" data-query="newer_than:30d (from:saiyo OR from:onecareer.jp OR from:openwork.jp OR from:linkedin.com)">就活</button>
             </div>
             <div class="queryTools">
-              <input id="queryInput" value="in:inbox newer_than:30d" />
+              <input id="queryInput" type="hidden" value="in:inbox newer_than:30d" />
               <select id="maxInput">
                 <option value="10">10件</option>
                 <option value="20">20件</option>
@@ -165,6 +189,7 @@
         </aside>
 
         <article class="readPane">
+          <button id="backToListButton" class="backToListButton" type="button">メール一覧へ</button>
           <div id="emptyState" class="emptyState">
             <h2>読むメールを選ぶ</h2>
             <p>AIが返信/確認/通知に仕分けし、必要なメールだけ深く扱います。</p>
@@ -189,6 +214,13 @@
               <button id="copySubjectButton" class="utilityButton">件名コピー</button>
             </section>
 
+            <section class="mailActionBar">
+              <button id="starButton" class="utilityButton">スター</button>
+              <button id="readButton" class="utilityButton">既読</button>
+              <button id="archiveButton" class="utilityButton">アーカイブ</button>
+              <button id="deleteButton" class="utilityButton dangerButton">削除</button>
+            </section>
+
             <pre id="mailBody" class="mailBody"></pre>
 
             <section class="aiPanel">
@@ -200,6 +232,7 @@
                 <div class="buttonGroup">
                   <button id="generateButton">作成</button>
                   <button id="draftButton">下書き保存</button>
+                  <button id="sendButton">送信</button>
                 </div>
               </div>
 
@@ -267,5 +300,6 @@
     <div id="toast" class="toast hidden"></div>
     <script src="/app.js"></script>
     <script src="/patch.js"></script>
+    <script src="/provider-send.js"></script>
   </body>
 </html>
