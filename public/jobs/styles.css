@@ -1057,17 +1057,23 @@ img { max-width: 100%; }
   .mobile-nav { display: grid; }
   .mobile-settings-btn { display: flex; }
 
-  /* Settings overlay — expands from gear button (top-right) */
-  #view-settings.active {
+  /* Settings overlay: always rendered on mobile, opacity controls visibility.
+     This avoids the display:none → display:block flash on open. */
+  #view-settings {
+    display: block !important;
     position: fixed;
     inset: 0;
     z-index: 55;
     background: var(--bg);
     overflow-y: auto;
     padding: 24px 18px 48px;
-    /* origin = center of gear button: right:35px top:33px */
-    transform-origin: calc(100% - 35px) 33px;
+    opacity: 0;
+    pointer-events: none;
     will-change: transform, opacity, filter;
+  }
+  #view-settings.active {
+    opacity: 1;
+    pointer-events: auto;
   }
 
   @keyframes settingsOpen {
