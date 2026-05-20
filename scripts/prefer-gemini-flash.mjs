@@ -18,11 +18,17 @@ if (!source.includes("function geminiModelFallbacks")) {
   const marker = `function grokConfig(state) {`;
   const helper = `function geminiModelFallbacks(config) {
   const preferredModel = /pro/i.test(config.model || "") ? "gemini-3-flash-preview" : config.model;
+  const envFallbacks = String(env.GEMINI_FALLBACK_MODEL || "")
+    .split(",")
+    .map((model) => model.trim())
+    .filter(Boolean);
   return [
     preferredModel,
-    "gemini-3-flash-preview",
+    ...envFallbacks,
     "gemini-2.5-flash"
-  ].filter((model, index, all) => model && all.indexOf(model) === index);
+  ]
+    .map((model) => (/pro/i.test(model) ? "gemini-3-flash-preview" : model))
+    .filter((model, index, all) => model && all.indexOf(model) === index);
 }
 
 `;
@@ -69,5 +75,5 @@ replaceAll(textGeminiFetch, textGeminiFallback);
 
 if (changed) {
   writeFileSync(file, source);
-  console.log("Gemini fallback order: gemini-3-flash-preview -> gemini-2.5-flash");
+  console.log("Gemini fallback order: GEMINI_MODEL -> GEMINI_FALLBACK_MODEL -> gemini-2.5-flash");
 }
