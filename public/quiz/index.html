@@ -69,8 +69,12 @@ C. 選択肢3"
                 <path d="M12 26h16" stroke="#818cf8" stroke-width="1.5" stroke-linecap="round"/>
               </svg>
               <p class="drop-title">スクリーンショットを貼り付け</p>
-              <p class="drop-hint">Ctrl+V で貼り付け、またはドラッグ&ドロップ</p>
-              <button class="btn-outline" id="paste-btn">クリックして貼り付け</button>
+              <p class="drop-hint">スクリーンショット後に Ctrl+V、またはファイルを選択</p>
+              <label class="btn-outline" id="file-label">
+                📁 ファイルを選択
+                <input type="file" id="file-input" accept="image/*" style="display:none" />
+              </label>
+              <button class="btn-outline" id="paste-btn" style="font-size:12px;padding:5px 10px">Ctrl+V 貼り付け</button>
             </div>
             <img id="image-preview" class="image-preview hidden" alt="プレビュー" />
             <button class="image-clear-btn hidden" id="image-clear-btn" title="画像を削除">

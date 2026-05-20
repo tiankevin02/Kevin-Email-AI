@@ -22,6 +22,7 @@ const imageDropInner  = document.getElementById("image-drop-inner");
 const imagePreview    = document.getElementById("image-preview");
 const imageClearBtn   = document.getElementById("image-clear-btn");
 const pasteBtn        = document.getElementById("paste-btn");
+const fileInput       = document.getElementById("file-input");
 const imageHintInput  = document.getElementById("image-hint-input");
 
 let history     = JSON.parse(localStorage.getItem("quiz-history") || "[]");
@@ -101,6 +102,15 @@ function loadImageBlob(blob) {
   };
   reader.readAsDataURL(blob);
 }
+
+// ---- File input ----
+fileInput.addEventListener("change", () => {
+  const file = fileInput.files[0];
+  if (file && file.type.startsWith("image/")) {
+    loadImageBlob(file);
+  }
+  fileInput.value = "";
+});
 
 // ---- Drag & drop ----
 imageDropZone.addEventListener("dragover", (e) => {
