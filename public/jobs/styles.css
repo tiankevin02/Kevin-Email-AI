@@ -1088,6 +1088,9 @@ img { max-width: 100%; }
   .view-header { flex-direction: column; gap: 10px; }
   .view-header .btn { width: 100%; justify-content: center; }
 
+  /* iOS Safari: font-size >= 16px prevents auto-zoom on input focus */
+  .form-input, .form-textarea, .form-select, .search-input { font-size: 16px; }
+
   .companies-grid { grid-template-columns: repeat(2, 1fr); gap: 10px; }
   .companies-grid .company-card { padding: 12px 11px; }
   .companies-grid .company-name { font-size: 13px; }

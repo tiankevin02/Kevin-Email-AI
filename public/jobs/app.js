@@ -162,8 +162,9 @@ async function fetchJson(path, opts = {}) {
   return body;
 }
 
-const STORAGE_KEY = "shukatsu-ai-v1";
-const BACKUP_KEY  = "shukatsu-ai-backup";
+const STORAGE_KEY  = "shukatsu-ai-v1";
+const BACKUP_KEY   = "shukatsu-ai-backup";
+const PROFILE_KEY  = "shukatsu-ai-profile";
 
 function getProfilePayload() {
   return state.profile || {};
@@ -181,12 +182,19 @@ function _readStorage(key) {
   try { return JSON.parse(localStorage.getItem(key) || "{}"); } catch { return {}; }
 }
 
-/* データを両キーに書く（companies が 1件以上ある時だけBACKUPも更新） */
+/* データを複数キーに書く */
 function _writeStorage(entry) {
   try {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(entry));
-    if ((entry.companies || []).length > 0) {
+    // BACKUPは企業データまたはプロフィールが少しでもあれば更新
+    const hasCompanies = (entry.companies || []).length > 0;
+    const hasProfile   = entry.profile && Object.values(entry.profile).some(v => typeof v === "string" && v.trim());
+    if (hasCompanies || hasProfile) {
       localStorage.setItem(BACKUP_KEY, JSON.stringify(entry));
+    }
+    // プロフィールは専用キーにも単独保存（企業データとは独立して守る）
+    if (entry.profile) {
+      localStorage.setItem(PROFILE_KEY, JSON.stringify(entry.profile));
     }
   } catch {}
 }
@@ -199,6 +207,14 @@ async function loadData() {
     state.schedules = main.schedules || [];
   }
   if (main.profile) state.profile = { ...state.profile, ...main.profile };
+
+  // ① プロフィール専用キーでプロフィールを補完（設定だけが消えた場合も復元）
+  try {
+    const savedProf = JSON.parse(localStorage.getItem(PROFILE_KEY) || "null");
+    if (savedProf && Object.values(savedProf).some(v => typeof v === "string" && v.trim())) {
+      state.profile = { ...savedProf, ...state.profile }; // 既存値を優先しつつ欠損を補完
+    }
+  } catch {}
 
   // ② メインが空ならバックアップから復元
   if (state.companies.length === 0) {
@@ -269,7 +285,8 @@ async function _pushToServer() {
 async function saveData() {
   const existing = _readStorage(STORAGE_KEY);
   const existingCount = (existing.companies || []).length;
-  if (existingCount > 0 && state.companies.length === 0) {
+  // 既存データが複数あるのに空になろうとしている場合のみブロック（誤消去防止）
+  if (existingCount >= 2 && state.companies.length === 0) {
     console.warn("[saveData] 空データへの上書きをブロックしました");
     return;
   }
@@ -3305,9 +3322,14 @@ async function init() {
   handleRoute();
 }
 
-// Flush any pending save to localStorage when the tab is closed/refreshed
+// タブを閉じる・リロード前に確実にlocalStorageへ書く
 window.addEventListener("beforeunload", () => {
-  if (state.companies.length > 0) {
+  _writeStorage({ companies: state.companies, schedules: state.schedules, profile: state.profile, updatedAt: Date.now() });
+});
+
+// モバイルでアプリを切り替えた時（beforeunloadが発火しないケース）も保存
+document.addEventListener("visibilitychange", () => {
+  if (document.visibilityState === "hidden") {
     _writeStorage({ companies: state.companies, schedules: state.schedules, profile: state.profile, updatedAt: Date.now() });
   }
 });
