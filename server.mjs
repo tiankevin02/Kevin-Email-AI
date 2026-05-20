@@ -15,7 +15,7 @@ const sessionsDir = path.join(dataDir, "sessions");
 const port = Number(env.PORT || process.env.PORT || 8787);
 const host = env.HOST || process.env.HOST || "127.0.0.1";
 
-const gmailScopes = ["https://www.googleapis.com/auth/gmail.modify"];
+const gmailScopes = ["https://www.googleapis.com/auth/gmail.modify", "https://www.googleapis.com/auth/gmail.send"];
 
 const defaultState = {
   profile: {
@@ -259,6 +259,35 @@ function mergeState(base, next) {
   };
 }
 
+
+function sessionBackup(state) {
+  return {
+    version: 1,
+    savedAt: new Date().toISOString(),
+    google: state.google,
+    profile: state.profile,
+    senders: state.senders
+  };
+}
+
+function validateSessionBackup(backup) {
+  if (!backup || typeof backup !== "object") throw new Error("復元データが見つかりません。");
+  const google = backup.google || {};
+  const hasAccount = Object.values(google.accounts || {}).some(
+    (account) => account?.tokens?.refresh_token || account?.tokens?.access_token
+  );
+  if (!google.tokens && !hasAccount) throw new Error("Gmail接続の復元データがありません。");
+  return {
+    google: {
+      ...defaultState.google,
+      ...google,
+      oauthState: null
+    },
+    profile: backup.profile || {},
+    senders: backup.senders || {}
+  };
+}
+
 function sendJson(res, status, body) {
   const text = JSON.stringify(body);
   res.writeHead(status, {
@@ -297,8 +326,24 @@ function openAIConfig(state) {
 function geminiConfig(state) {
   return {
     key: env.GEMINI_API_KEY || state.config.geminiApiKey,
-    model: env.GEMINI_MODEL || state.config.geminiModel || "gemini-2.5-flash"
+    model: env.GEMINI_MODEL || state.config.geminiModel || "gemini-2.5-flash",
+    fallbackModel: env.GEMINI_FALLBACK_MODEL || "gemini-2.5-flash"
   };
+}
+
+function isGeminiQuotaError(status, body) {
+  if (status === 429) return true;
+  const msg = (body?.error?.message || body?.error?.status || "").toLowerCase();
+  return msg.includes("resource_exhausted") || msg.includes("quota") || msg.includes("rate limit");
+}
+
+async function callGeminiApi(key, model, requestBody) {
+  const response = await fetch(
+    `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${key}`,
+    { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(requestBody) }
+  );
+  const body = await response.json();
+  return { ok: response.ok, status: response.status, body };
 }
 
 function grokConfig(state) {
@@ -369,20 +414,17 @@ async function tryProviderChat(provider, state, messages, temperature) {
       const contents = messages
         .filter((m) => m.role !== "system")
         .map((m) => ({ role: m.role === "assistant" ? "model" : "user", parts: [{ text: m.content }] }));
-      const response = await fetch(
-        `https://generativelanguage.googleapis.com/v1beta/models/${config.model}:generateContent?key=${config.key}`,
-        {
-          method: "POST",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify({
-            ...(system ? { systemInstruction: { parts: [{ text: system }] } } : {}),
-            contents,
-            generationConfig: { temperature, maxOutputTokens: 4096 }
-          })
-        }
-      );
-      const body = await response.json();
-      return response.ok ? (body.candidates?.[0]?.content?.parts?.[0]?.text?.trim() || "") : null;
+      const reqBody = {
+        ...(system ? { systemInstruction: { parts: [{ text: system }] } } : {}),
+        contents,
+        generationConfig: { temperature, maxOutputTokens: 4096 }
+      };
+      let { ok, status, body } = await callGeminiApi(config.key, config.model, reqBody);
+      if (!ok && isGeminiQuotaError(status, body) && config.fallbackModel !== config.model) {
+        console.log(`Gemini quota exceeded on ${config.model}, falling back to ${config.fallbackModel}`);
+        ({ ok, body } = await callGeminiApi(config.key, config.fallbackModel, reqBody));
+      }
+      return ok ? (body.candidates?.[0]?.content?.parts?.[0]?.text?.trim() || "") : null;
     }
     case "anthropic": {
       if (!configuredAnthropic(state)) return null;
@@ -428,6 +470,18 @@ async function callGemini(state, messages, temperature) {
   return tryProviderChat("gemini", state, messages, temperature);
 }
 
+function buildProfileContext(userProfile) {
+  if (!userProfile) return "";
+  const parts = [];
+  if (userProfile.gakuchika)  parts.push(`【ガクチカ】\n${userProfile.gakuchika}`);
+  if (userProfile.selfPr)     parts.push(`【自己PR】\n${userProfile.selfPr}`);
+  if (userProfile.motivation) parts.push(`【志望動機の軸】\n${userProfile.motivation}`);
+  if (userProfile.skills)     parts.push(`【スキル・資格】\n${userProfile.skills}`);
+  if (userProfile.other)      parts.push(`【その他】\n${userProfile.other}`);
+  if (!parts.length) return "";
+  return "\n\n---\n【応募者のプロフィール情報】\n" + parts.join("\n\n");
+}
+
 async function jobsAiChat(state, systemPrompt, userContent) {
   const messages = [{ role: "system", content: systemPrompt }, { role: "user", content: userContent }];
   for (const provider of aiProviderOrder(state)) {
@@ -437,6 +491,119 @@ async function jobsAiChat(state, systemPrompt, userContent) {
     } catch {}
   }
   const err = new Error("AIサービスが設定されていません。設定からAPIキーを入力してください。");
+  err.status = 400;
+  throw err;
+}
+
+async function quizAiWithImages(state, systemPrompt, userText, imgList) {
+  // imgList: [{base64, mime}]
+  for (const provider of aiProviderOrder(state)) {
+    try {
+      let result = null;
+      if (provider === "anthropic" && configuredAnthropic(state)) {
+        const config = anthropicConfig(state);
+        const contentParts = imgList.map(img => ({
+          type: "image", source: { type: "base64", media_type: img.mime, data: img.base64 }
+        }));
+        contentParts.push({ type: "text", text: userText });
+        const response = await fetch("https://api.anthropic.com/v1/messages", {
+          method: "POST",
+          headers: { "content-type": "application/json", "x-api-key": config.key, "anthropic-version": "2023-06-01" },
+          body: JSON.stringify({ model: config.model, max_tokens: 4096, system: systemPrompt, messages: [{ role: "user", content: contentParts }] })
+        });
+        const body = await response.json();
+        result = response.ok ? (body.content?.[0]?.text?.trim() || "") : null;
+      } else if (provider === "gemini" && configuredGemini(state)) {
+        const config = geminiConfig(state);
+        const parts = imgList.map(img => ({ inline_data: { mime_type: img.mime, data: img.base64 } }));
+        parts.push({ text: userText });
+        const reqBody = { systemInstruction: { parts: [{ text: systemPrompt }] }, contents: [{ role: "user", parts }], generationConfig: { temperature: 0.3, maxOutputTokens: 4096 } };
+        let { ok, status, body } = await callGeminiApi(config.key, config.model, reqBody);
+        if (!ok && isGeminiQuotaError(status, body) && config.fallbackModel !== config.model) {
+          console.log(`Gemini quota exceeded on ${config.model}, falling back to ${config.fallbackModel}`);
+          ({ ok, body } = await callGeminiApi(config.key, config.fallbackModel, reqBody));
+        }
+        result = ok ? (body.candidates?.[0]?.content?.parts?.[0]?.text?.trim() || "") : null;
+      } else if (provider === "openai" && configuredOpenAI(state)) {
+        const config = openAIConfig(state);
+        const contentParts = imgList.map(img => ({
+          type: "image_url", image_url: { url: `data:${img.mime};base64,${img.base64}` }
+        }));
+        contentParts.push({ type: "text", text: userText });
+        const response = await fetch("https://api.openai.com/v1/chat/completions", {
+          method: "POST",
+          headers: { authorization: `Bearer ${config.key}`, "content-type": "application/json" },
+          body: JSON.stringify({ model: "gpt-4o", temperature: 0.3, messages: [{ role: "system", content: systemPrompt }, { role: "user", content: contentParts }] })
+        });
+        const body = await response.json();
+        result = response.ok ? (body.choices?.[0]?.message?.content?.trim() || "") : null;
+      }
+      if (result !== null) return result;
+    } catch {}
+  }
+  const err = new Error("画像対応AIが設定されていません。Anthropic / Gemini / OpenAI のAPIキーを設定してください。");
+  err.status = 400;
+  throw err;
+}
+
+async function quizAiWithImage(state, systemPrompt, userText, imageBase64, mimeType) {
+  for (const provider of aiProviderOrder(state)) {
+    try {
+      let result = null;
+      if (provider === "anthropic" && configuredAnthropic(state)) {
+        const config = anthropicConfig(state);
+        const response = await fetch("https://api.anthropic.com/v1/messages", {
+          method: "POST",
+          headers: { "content-type": "application/json", "x-api-key": config.key, "anthropic-version": "2023-06-01" },
+          body: JSON.stringify({
+            model: config.model, max_tokens: 4096, system: systemPrompt,
+            messages: [{ role: "user", content: [
+              { type: "image", source: { type: "base64", media_type: mimeType, data: imageBase64 } },
+              { type: "text", text: userText }
+            ]}]
+          })
+        });
+        const body = await response.json();
+        result = response.ok ? (body.content?.[0]?.text?.trim() || "") : null;
+      } else if (provider === "gemini" && configuredGemini(state)) {
+        const config = geminiConfig(state);
+        const reqBody = {
+          systemInstruction: { parts: [{ text: systemPrompt }] },
+          contents: [{ role: "user", parts: [
+            { inline_data: { mime_type: mimeType, data: imageBase64 } },
+            { text: userText }
+          ]}],
+          generationConfig: { temperature: 0.3, maxOutputTokens: 4096 }
+        };
+        let { ok, status, body } = await callGeminiApi(config.key, config.model, reqBody);
+        if (!ok && isGeminiQuotaError(status, body) && config.fallbackModel !== config.model) {
+          console.log(`Gemini quota exceeded on ${config.model}, falling back to ${config.fallbackModel}`);
+          ({ ok, body } = await callGeminiApi(config.key, config.fallbackModel, reqBody));
+        }
+        result = ok ? (body.candidates?.[0]?.content?.parts?.[0]?.text?.trim() || "") : null;
+      } else if (provider === "openai" && configuredOpenAI(state)) {
+        const config = openAIConfig(state);
+        const response = await fetch("https://api.openai.com/v1/chat/completions", {
+          method: "POST",
+          headers: { authorization: `Bearer ${config.key}`, "content-type": "application/json" },
+          body: JSON.stringify({
+            model: "gpt-4o", temperature: 0.3,
+            messages: [
+              { role: "system", content: systemPrompt },
+              { role: "user", content: [
+                { type: "image_url", image_url: { url: `data:${mimeType};base64,${imageBase64}` } },
+                { type: "text", text: userText }
+              ]}
+            ]
+          })
+        });
+        const body = await response.json();
+        result = response.ok ? (body.choices?.[0]?.message?.content?.trim() || "") : null;
+      }
+      if (result !== null) return result;
+    } catch {}
+  }
+  const err = new Error("画像対応AIが設定されていません。Anthropic / Gemini / OpenAI のAPIキーを設定してください。");
   err.status = 400;
   throw err;
 }
@@ -871,7 +1038,7 @@ async function extractCareerScheduleItems(state, messages) {
     .slice(0, 40)
     .map(({ message }, index) => ({ ...message, sourceIndex: index }));
 
-  if (!configuredOpenAI(state) || !candidates.length) return extractScheduleItems(candidates);
+  if (!configuredAI(state) || !candidates.length) return extractScheduleItems(candidates);
 
   const source = candidates.map((message) => ({
     sourceIndex: message.sourceIndex,
@@ -1066,6 +1233,33 @@ async function route(req, res) {
         // Fallback below is enough.
       }
       sendJson(res, 200, { url: candidates[0] || fallback, candidates });
+      return;
+    }
+
+
+    if (req.method === "GET" && url.pathname === "/api/session/backup") {
+      if (!state.google.tokens && !Object.keys(state.google.accounts || {}).length) {
+        sendJson(res, 200, { backup: null });
+        return;
+      }
+      sendJson(res, 200, { backup: sessionBackup(state) });
+      return;
+    }
+
+    if (req.method === "POST" && url.pathname === "/api/session/restore") {
+      const body = await parseBody(req);
+      const restored = validateSessionBackup(body.backup);
+      state.google = restored.google;
+      state.profile = { ...state.profile, ...restored.profile };
+      state.senders = { ...state.senders, ...restored.senders };
+      activeAccount(state);
+      await writeState(state);
+      sendJson(res, 200, {
+        restored: true,
+        gmailConnected: Boolean(state.google.tokens),
+        email: state.google.email,
+        accounts: accountsList(state)
+      });
       return;
     }
 
@@ -1284,7 +1478,7 @@ async function route(req, res) {
         .sort((a, b) => b.importance - a.importance || messageTime(b) - messageTime(a))
         .slice(0, 12);
       let digest = fallbackDigest(messages, period);
-      if (configuredOpenAI(state) && important.length) {
+      if (configuredAI(state) && important.length) {
         digest = await chatComplete(
           state,
           [
@@ -1425,14 +1619,20 @@ AIプロバイダー: Gemini=gemini, Anthropic/Claude=anthropic, OpenAI/GPT=open
 
     if (req.method === "POST" && url.pathname === "/api/jobs") {
       const body = await parseBody(req);
-      await writeJobsData({ companies: body.companies || [], schedules: body.schedules || [] });
+      await writeJobsData({
+        companies:  body.companies  || [],
+        schedules:  body.schedules  || [],
+        profile:    body.profile    || {},
+        updatedAt:  body.updatedAt  || Date.now(),
+      });
       sendJson(res, 200, { ok: true });
       return;
     }
 
     if (req.method === "POST" && url.pathname === "/api/jobs/ai/es-review") {
-      const { companyName, question, answer } = await parseBody(req);
+      const { companyName, question, answer, userProfile } = await parseBody(req);
       if (!companyName || !question || !answer) { sendJson(res, 400, { error: "企業名・設問・回答を入力してください。" }); return; }
+      const profileCtx = buildProfileContext(userProfile);
       const system = `あなたは${companyName}の人事採用担当です。エントリーシートの書類選考を行います。
 
 まず${companyName}の企業理念・価値観・求める人材像をあなたの知識で整理し、そのペルソナに基づいてESを評価・添削してください。
@@ -1460,7 +1660,7 @@ AIプロバイダー: Gemini=gemini, Anthropic/Claude=anthropic, OpenAI/GPT=open
 
 ## 総評
 （100字程度の総合コメント）`;
-      const review = await jobsAiChat(state, system, `【設問】${question}\n\n【回答】\n${answer}`);
+      const review = await jobsAiChat(state, system, `【設問】${question}\n\n【回答】\n${answer}${profileCtx}`);
       sendJson(res, 200, { review });
       return;
     }
@@ -1558,11 +1758,12 @@ AIプロバイダー: Gemini=gemini, Anthropic/Claude=anthropic, OpenAI/GPT=open
     }
 
     if (req.method === "POST" && url.pathname === "/api/jobs/ai/es-advice") {
-      const { companyName, question } = await parseBody(req);
+      const { companyName, question, userProfile } = await parseBody(req);
       if (!companyName || !question) { sendJson(res, 400, { error: "企業名と設問を入力してください。" }); return; }
-      const system = `あなたは${companyName}の人事採用担当です。ESの設問に対して、応募者が回答を作成するためのアドバイスを提供します。`;
+      const profileCtx = buildProfileContext(userProfile);
+      const system = `あなたは${companyName}の人事採用担当です。ESの設問に対して、応募者が回答を作成するためのアドバイスを提供します。応募者のプロフィール情報がある場合はそれを踏まえた具体的なアドバイスをしてください。`;
       const user = `【企業】${companyName}
-【設問】${question}
+【設問】${question}${profileCtx}
 
 以下の観点でアドバイスをマークダウンで提供してください：
 
@@ -1579,21 +1780,22 @@ AIプロバイダー: Gemini=gemini, Anthropic/Claude=anthropic, OpenAI/GPT=open
 - （NG例）
 
 ## 参考例文（100字程度）
-（書き出しの例）`;
+${profileCtx ? "（応募者のプロフィールを活かした書き出し例）" : "（書き出しの例）"}`;
       const advice = await jobsAiChat(state, system, user);
       sendJson(res, 200, { advice });
       return;
     }
 
     if (req.method === "POST" && url.pathname === "/api/jobs/ai/es-strategy") {
-      const { companyName, esEntries } = await parseBody(req);
+      const { companyName, esEntries, userProfile } = await parseBody(req);
       if (!companyName) { sendJson(res, 400, { error: "企業名を入力してください。" }); return; }
       const questionsStr = (esEntries || []).map(e => `- ${e.question}`).join("\n") || "（設問未登録）";
-      const system = "あなたは就職活動の専門家です。企業のES（エントリーシート）対策に関する詳しい情報を提供します。";
+      const profileCtx = buildProfileContext(userProfile);
+      const system = "あなたは就職活動の専門家です。企業のES（エントリーシート）対策に関する詳しい情報を提供します。応募者のプロフィールがある場合は、その人に合った具体的なアドバイスをしてください。";
       const user = `${companyName}のES対策についてマークダウンで以下の形式で教えてください：
 
 【登録されている設問】
-${questionsStr}
+${questionsStr}${profileCtx}
 
 ## ${companyName}のES対策
 
@@ -1607,7 +1809,7 @@ ${questionsStr}
 - （この企業特有のアドバイス）
 
 ### 通過率を上げるコツ
-（差別化のポイント）
+${profileCtx ? "（上記応募者のプロフィールを踏まえた差別化ポイント）" : "（差別化のポイント）"}
 
 ### 注意事項
 （字数制限、書式など）
@@ -1619,12 +1821,13 @@ ${questionsStr}
     }
 
     if (req.method === "POST" && url.pathname === "/api/jobs/ai/iv-review") {
-      const { companyName, interviewType, question, answer } = await parseBody(req);
+      const { companyName, interviewType, question, answer, userProfile } = await parseBody(req);
       if (!question || !answer) { sendJson(res, 400, { error: "設問と回答を入力してください。" }); return; }
-      const system = `あなたは${companyName || "企業"}の面接官です。面接の回答を添削します。`;
+      const profileCtx = buildProfileContext(userProfile);
+      const system = `あなたは${companyName || "企業"}の面接官です。面接の回答を添削します。${profileCtx ? "応募者のプロフィールを参考に、その人の経験を活かした具体的なフィードバックをしてください。" : ""}`;
       const user = `【企業】${companyName || "不明"}　【面接種別】${interviewType || "面接"}
 【設問】${question}
-【回答】${answer}
+【回答】${answer}${profileCtx}
 
 以下の観点でマークダウンで添削してください：
 
@@ -1636,7 +1839,7 @@ ${questionsStr}
 - （2〜3点）
 
 ## 改善案
-（より良い回答例）
+${profileCtx ? "（応募者のプロフィールを活かした、より良い回答例）" : "（より良い回答例）"}
 
 ## 総評
 （80字程度）`;
@@ -1646,11 +1849,12 @@ ${questionsStr}
     }
 
     if (req.method === "POST" && url.pathname === "/api/jobs/ai/iv-advice") {
-      const { companyName, interviewType, question } = await parseBody(req);
+      const { companyName, interviewType, question, userProfile } = await parseBody(req);
       if (!question) { sendJson(res, 400, { error: "設問を入力してください。" }); return; }
-      const system = `あなたは就職活動の専門家です。面接の設問に対する回答のアドバイスを提供します。`;
+      const profileCtx = buildProfileContext(userProfile);
+      const system = `あなたは就職活動の専門家です。面接の設問に対する回答のアドバイスを提供します。応募者のプロフィールがある場合は、その人の実際の経験・強みを使った具体的なアドバイスをしてください。`;
       const user = `【企業】${companyName || "不明"}　【面接種別】${interviewType || "面接"}
-【設問】${question}
+【設問】${question}${profileCtx}
 
 この設問への回答アドバイスをマークダウンで提供してください：
 
@@ -1664,20 +1868,21 @@ ${questionsStr}
 4. （入社後への展開）
 
 ## 効果的なポイント
-- （具体的なアドバイス）
+${profileCtx ? "（応募者のプロフィールを活かした具体的なアドバイス）" : "- （具体的なアドバイス）"}
 
 ## 回答例（120字程度）
-（参考になる書き出し）`;
+${profileCtx ? "（応募者のガクチカ・自己PRを踏まえた書き出し例）" : "（参考になる書き出し）"}`;
       const advice = await jobsAiChat(state, system, user);
       sendJson(res, 200, { advice });
       return;
     }
 
     if (req.method === "POST" && url.pathname === "/api/jobs/ai/iv-strategy") {
-      const { companyName } = await parseBody(req);
+      const { companyName, userProfile } = await parseBody(req);
       if (!companyName) { sendJson(res, 400, { error: "企業名を入力してください。" }); return; }
-      const system = "あなたは就職活動支援の専門家です。企業の面接情報と対策を詳しく提供します。";
-      const user = `${companyName}の面接対策についてマークダウンで以下の形式でまとめてください：
+      const profileCtx = buildProfileContext(userProfile);
+      const system = "あなたは就職活動支援の専門家です。企業の面接情報と対策を詳しく提供します。応募者のプロフィールがある場合は、その人に合った個別の対策を含めてください。";
+      const user = `${companyName}の面接対策についてマークダウンで以下の形式でまとめてください：${profileCtx}
 
 ## ${companyName}の面接対策情報
 
@@ -1694,7 +1899,7 @@ ${questionsStr}
 （おすすめの逆質問例）
 
 ### 対策のポイント
-（この企業の面接を通過するための具体的アドバイス）
+${profileCtx ? "（上記応募者のプロフィールを踏まえた、この企業の面接を通過するための具体的アドバイス）" : "（この企業の面接を通過するための具体的アドバイス）"}
 
 ※体験談・レビューサイトの情報を参考にした推測を含みます。`;
       const strategy = await jobsAiChat(state, system, user);
@@ -1703,8 +1908,10 @@ ${questionsStr}
     }
 
     if (req.method === "POST" && url.pathname === "/api/jobs/ai/generate-email") {
-      const { companyName, industry, selectionType, emailType, selfPr, status } = await parseBody(req);
+      const { companyName, industry, selectionType, emailType, selfPr, status, userProfile } = await parseBody(req);
       if (!companyName) { sendJson(res, 400, { error: "企業名を入力してください。" }); return; }
+      const profileCtx = buildProfileContext(userProfile);
+      const effectiveSelfPr = selfPr || userProfile?.selfPr || "";
       const system = "あなたは就職活動の文章作成のプロです。採用担当者に好印象を与える、礼儀正しく熱意が伝わるメールを作成します。";
       const user = `以下の情報をもとに、${emailType || "応募"}メールを作成してください。
 
@@ -1712,7 +1919,7 @@ ${questionsStr}
 【業界】${industry || "不明"}
 【選考タイプ】${selectionType || "インターン"}
 【メール種別】${emailType || "応募"}メール
-【自己PR/アピールポイント】${selfPr || "（未記載）"}
+【自己PR/アピールポイント】${effectiveSelfPr || "（未記載）"}${profileCtx}
 
 件名も含めて、実際に送れる完成形のメールを作成してください。
 ・丁寧で簡潔な文体
@@ -1725,9 +1932,10 @@ ${questionsStr}
     }
 
     if (req.method === "POST" && url.pathname === "/api/jobs/ai/scan-job") {
-      const { companyName, jobUrl, jobText } = await parseBody(req);
+      const { companyName, jobUrl, jobText, userProfile } = await parseBody(req);
       if (!jobUrl && !jobText) { sendJson(res, 400, { error: "URLまたはテキストを入力してください。" }); return; }
-      const system = "あなたは就職活動の情報分析の専門家です。求人情報から重要な情報を正確に抽出します。";
+      const profileCtx = buildProfileContext(userProfile);
+      const system = "あなたは就職活動の情報分析の専門家です。求人情報から重要な情報を正確に抽出します。応募者のプロフィールがある場合は、その人との相性・アピールポイントも分析してください。";
       let content = jobText || "";
       if (jobUrl && !content) {
         try {
@@ -1738,7 +1946,7 @@ ${questionsStr}
       }
       const user = `以下の求人情報を分析してください。
 企業名: ${companyName || "不明"}
-内容: ${content.slice(0, 2500)}
+内容: ${content.slice(0, 2500)}${profileCtx}
 
 ## 求人情報分析
 
@@ -1755,23 +1963,25 @@ ${questionsStr}
 （応募→内定までのステップ）
 
 ### アピールすべきポイント
-（この企業への応募で特に強調すべき点）`;
+${profileCtx ? "（上記応募者のプロフィールを踏まえた、この企業への応募で特に強調すべき点）" : "（この企業への応募で特に強調すべき点）"}`;
       const result = await jobsAiChat(state, system, user);
       sendJson(res, 200, { result });
       return;
     }
 
     if (req.method === "POST" && url.pathname === "/api/jobs/ai/optimize-selfpr") {
-      const { companyName, industry, selectionType, basePr, esEntries } = await parseBody(req);
-      if (!companyName || !basePr) { sendJson(res, 400, { error: "企業名と自己PRを入力してください。" }); return; }
+      const { companyName, industry, selectionType, basePr, esEntries, userProfile } = await parseBody(req);
+      const effectiveBasePr = basePr || userProfile?.selfPr || "";
+      if (!companyName || !effectiveBasePr) { sendJson(res, 400, { error: "企業名と自己PRを入力してください。" }); return; }
       const esInfo = (esEntries || []).filter(e => e.answer).map(e => `Q: ${e.question}\nA: ${e.answer}`).join("\n\n");
+      const profileCtx = buildProfileContext(userProfile);
       const system = `あなたは${companyName}の人事採用担当AIです。${companyName}の企業理念・価値観・求める人材像をもとに、応募者の自己PRを最適化します。`;
       const user = `【企業】${companyName}（${industry || "業界不明"}）【選考タイプ】${selectionType || "インターン"}
 
 【ベース自己PR】
-${basePr}
+${effectiveBasePr}
 
-${esInfo ? `【ESの回答（参考）】\n${esInfo}` : ""}
+${esInfo ? `【ESの回答（参考）】\n${esInfo}` : ""}${profileCtx}
 
 以下の観点で最適化した自己PRを作成してください：
 1. ${companyName}の企業理念・求める人物像との整合性を高める
@@ -1791,14 +2001,19 @@ ${esInfo ? `【ESの回答（参考）】\n${esInfo}` : ""}
     }
 
     if (req.method === "POST" && url.pathname === "/api/jobs/ai/gap-analysis") {
-      const { companyName, industry, selectionType, esEntries, selfPr, notes } = await parseBody(req);
+      const { companyName, industry, selectionType, esEntries, selfPr, notes, userProfile } = await parseBody(req);
       if (!companyName) { sendJson(res, 400, { error: "企業名を入力してください。" }); return; }
       const esInfo = (esEntries || []).filter(e => e.question).map(e => `Q: ${e.question}\nA: ${e.answer || "（未回答）"}`).join("\n\n");
+      const effectiveSelfPr = selfPr || userProfile?.selfPr || "";
+      const effectiveGakuchika = userProfile?.gakuchika || "";
       const system = `あなたは${companyName}の人事採用担当AIです。企業が求めるものと応募者が持っているものを比較し、ギャップを明確に分析します。`;
       const user = `【企業】${companyName}（${industry || ""}）【選考タイプ】${selectionType || "インターン"}
 
 【応募者の現状】
-自己PR: ${selfPr || "（未記載）"}
+自己PR: ${effectiveSelfPr || "（未記載）"}
+ガクチカ: ${effectiveGakuchika || "（未記載）"}
+志望動機の軸: ${userProfile?.motivation || "（未記載）"}
+スキル・資格: ${userProfile?.skills || "（未記載）"}
 メモ・志望動機: ${notes || "（未記載）"}
 ESの内容:
 ${esInfo || "（未記載）"}
@@ -1825,11 +2040,12 @@ ${esInfo || "（未記載）"}
     }
 
     if (req.method === "POST" && url.pathname === "/api/jobs/ai/mock-interview-start") {
-      const { companyName, interviewType } = await parseBody(req);
+      const { companyName, interviewType, userProfile } = await parseBody(req);
       if (!companyName) { sendJson(res, 400, { error: "企業名を入力してください。" }); return; }
-      const system = `あなたは${companyName}の面接官です。${companyName}の企業理念と求める人物像を踏まえて面接を行います。`;
+      const profileCtx = buildProfileContext(userProfile);
+      const system = `あなたは${companyName}の面接官です。${companyName}の企業理念と求める人物像を踏まえて面接を行います。${profileCtx ? "応募者のプロフィールを参考にして、その人に合った質問をしてください。" : ""}`;
       const user = `${companyName}の${interviewType || "一次面接"}として最初の質問を1つだけ考えてください。
-また、この面接の評価基準・コンテキストを簡潔にまとめてください。
+また、この面接の評価基準・コンテキストを簡潔にまとめてください。${profileCtx}
 
 出力形式（JSON）:
 {
@@ -1851,9 +2067,10 @@ JSONのみを返してください。`;
     }
 
     if (req.method === "POST" && url.pathname === "/api/jobs/ai/mock-interview-next") {
-      const { companyName, interviewType, question, answer, history, context } = await parseBody(req);
+      const { companyName, interviewType, question, answer, history, context, userProfile } = await parseBody(req);
       if (!question || !answer) { sendJson(res, 400, { error: "質問と回答を入力してください。" }); return; }
-      const system = `あなたは${companyName}の面接官です。評価基準: ${context || "企業理念に基づく評価"}`;
+      const profileCtx = buildProfileContext(userProfile);
+      const system = `あなたは${companyName}の面接官です。評価基準: ${context || "企業理念に基づく評価"}${profileCtx ? "\n" + profileCtx : ""}`;
       const histStr = (history || []).map(h => `Q: ${h.q}\nA: ${h.a}`).join("\n\n");
       const user = `面接の流れ:
 ${histStr ? histStr + "\n\n" : ""}Q: ${question}
@@ -1917,9 +2134,90 @@ JSONのみを返してください。`;
       return;
     }
 
+    if (req.method === "POST" && url.pathname === "/api/jobs/ai/archive-search") {
+      const { query, entries, userProfile } = await parseBody(req);
+      if (!query) { sendJson(res, 400, { error: "検索クエリを入力してください。" }); return; }
+      if (!entries || entries.length === 0) { sendJson(res, 200, { results: [] }); return; }
+      const profileCtx = buildProfileContext(userProfile);
+      const entriesText = entries.map((e, i) =>
+        `[${i}] 企業:${e.companyName} 種別:${e.type === "es" ? "ES" : "面接Q&A"}\n設問:${e.question}\n回答:${(e.answer || "（未記入）").slice(0, 300)}`
+      ).join("\n\n");
+      const system = `あなたは就職活動のアシスタントです。ユーザーの検索クエリに対して、過去のESや面接Q&Aから関連性の高いものを見つけてください。
+関連性の判断基準：
+- キーワードが一致する（直接一致）
+- テーマが類似する（例：「挫折経験」と「困難を乗り越えた経験」は類似）
+- 回答内容が検索クエリの参考になる
+
+必ず以下のJSON配列のみを返してください（マークダウン不可、JSONのみ）：
+[{"index": 数字, "relevance": "high"|"medium", "reason": "関連する理由（20字以内）"}, ...]
+関連性のないものは含めないこと。最大10件まで。${profileCtx}`;
+      const result = await jobsAiChat(state, system, `【検索クエリ】${query}\n\n【登録データ】\n${entriesText}`);
+      let ranked = [];
+      try {
+        const jsonMatch = result.match(/\[[\s\S]*\]/);
+        ranked = jsonMatch ? JSON.parse(jsonMatch[0]) : [];
+      } catch {}
+      sendJson(res, 200, { results: ranked });
+      return;
+    }
+
+    if (req.method === "POST" && url.pathname === "/api/quiz/answer") {
+      const { question, type, imageBase64, imageMimeType, images, noExplanation } = await parseBody(req);
+      const hasImage = imageBase64 || (Array.isArray(images) && images.length > 0);
+      if (!question && !hasImage) { sendJson(res, 400, { error: "問題文または画像を入力してください。" }); return; }
+      if (!configuredAI(state)) {
+        const err = new Error("AIサービスが設定されていません。設定からAPIキーを入力してください。");
+        err.status = 400;
+        throw err;
+      }
+      const typeDescriptions = {
+        verbal: "言語（国語・読解・語彙・文章整序など）",
+        nonverbal: "非言語（数学・計算・推論・図形・場合の数など）",
+        english: "英語（読解・文法・語彙など）",
+        personality: "性格検査（傾向の説明と一般的な回答のポイント）",
+        other: "その他の適性検査"
+      };
+      const typeHint = typeDescriptions[type] || "言語・非言語・英語など各種Webテスト問題";
+      const answerFormat = noExplanation
+        ? `【回答の形式】
+問題が複数ある場合は「**第1問:** A」「**第2問:** C」のように問題ごとに1行で答える。
+問題が1問だけの場合は正解（選択肢記号または答え）を1〜2行で簡潔に答えるだけ。解説不要。`
+        : `【回答の形式】
+問題が複数ある場合は「## 第1問」「## 第2問」のように問題ごとにセクションを分けて答える。
+問題が1問だけの場合:
+1. まず「## 解答」として正解（選択肢記号または答え）を明示する
+2. 「## 解説」として解き方・考え方を段階的に説明する
+3. 「## ポイント」として類題で使えるコツや公式を簡潔にまとめる
+
+解答は必ず根拠とともに示し、受験者が理解できるよう丁寧に説明してください。
+計算問題は途中の計算過程も示してください。
+選択肢がある場合は、各選択肢が正しい/誤りの理由も説明してください。`;
+      const system = `あなたはSPI・TG-WEB・GABなど日本のWebテスト（適性検査）の専門家です。
+受験者から問題が送られてきたら、正確な解答${noExplanation ? "" : "と丁寧な解説"}を提供してください。
+
+【対応する問題タイプ】${typeHint}
+
+${answerFormat}`;
+
+      let answer;
+      if (hasImage) {
+        // 複数画像対応: imagesが配列ならそのまま、旧形式の単一imageBase64にも対応
+        const imgList = Array.isArray(images) && images.length
+          ? images.map(img => ({ base64: img.base64, mime: img.mime || "image/png" }))
+          : [{ base64: imageBase64, mime: imageMimeType || "image/png" }];
+        const userText = question || "画像の問題をすべて読み取り、各問の正解を示してください。";
+        answer = await quizAiWithImages(state, system, userText, imgList);
+      } else {
+        answer = await jobsAiChat(state, system, question);
+      }
+      sendJson(res, 200, { answer });
+      return;
+    }
+
     if (req.method === "GET") {
       const pathname = url.pathname === "/" ? "/index.html"
         : (url.pathname === "/jobs" || url.pathname === "/jobs/") ? "/jobs/index.html"
+        : (url.pathname === "/quiz" || url.pathname === "/quiz/") ? "/quiz/index.html"
         : url.pathname;
       const safePath = path.normalize(path.join(publicDir, pathname));
       if (!safePath.startsWith(publicDir)) {
