@@ -93,6 +93,16 @@ function clearImages() {
   renderThumbs();
 }
 
+// Delete キーで画像全削除
+document.addEventListener("keydown", (e) => {
+  if (e.key === "Delete" && currentTab === "image" && imageList.length > 0
+      && document.activeElement.tagName !== "INPUT"
+      && document.activeElement.tagName !== "TEXTAREA") {
+    clearImages();
+    showToast("画像を削除しました");
+  }
+});
+
 // ---- Paste (Ctrl+V) ----
 document.addEventListener("paste", handlePasteEvent);
 pasteBtn.addEventListener("click", async () => {
