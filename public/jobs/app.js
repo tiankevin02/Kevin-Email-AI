@@ -1797,7 +1797,7 @@ function renderToolsTab(c) {
           </div>
           <div class="form-group mt-3">
             <label class="form-label">自己PR（任意）</label>
-            <textarea class="form-textarea" id="email-selfpr-${c.id}" rows="3" placeholder="自己PRがあれば入力（省略可）">${escHtml(c.baseSelfPr || "")}</textarea>
+            <textarea class="form-textarea" id="email-selfpr-${c.id}" rows="3" placeholder="自己PRがあれば入力（省略可）">${escHtml(c.baseSelfPr || state.profile.selfPr || "")}</textarea>
           </div>
           <button class="btn btn-ai mt-3" onclick="generateApplicationEmail('${c.id}')">
             <svg viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M11.3 1.046A1 1 0 0112 2v5h4a1 1 0 01.82 1.573l-7 10A1 1 0 018 18v-5H4a1 1 0 01-.82-1.573l7-10a1 1 0 011.12-.38z" clip-rule="evenodd"/></svg>
@@ -1839,7 +1839,7 @@ function renderToolsTab(c) {
           <p style="font-size:13px;color:var(--text-3);margin-bottom:12px">ベースとなる自己PRを${escHtml(c.name)}の企業理念・求める人物像に合わせて最適化します</p>
           <div class="form-group">
             <label class="form-label">ベース自己PR <span style="color:var(--red)">*</span></label>
-            <textarea class="form-textarea" id="selfpr-base-${c.id}" rows="6" placeholder="現在の自己PRを入力してください">${escHtml(c.baseSelfPr || "")}</textarea>
+            <textarea class="form-textarea" id="selfpr-base-${c.id}" rows="6" placeholder="現在の自己PRを入力してください">${escHtml(c.baseSelfPr || state.profile.selfPr || "")}</textarea>
           </div>
           <button class="btn btn-ai mt-3" onclick="optimizeSelfPr('${c.id}')">
             <svg viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M11.3 1.046A1 1 0 0112 2v5h4a1 1 0 01.82 1.573l-7 10A1 1 0 018 18v-5H4a1 1 0 01-.82-1.573l7-10a1 1 0 011.12-.38z" clip-rule="evenodd"/></svg>
@@ -2514,7 +2514,7 @@ function renderAiToolsContent(companyId) {
         </div>
         <div class="form-group mt-3">
           <label class="form-label">自己PR（任意）</label>
-          <textarea class="form-textarea" id="aitools-email-selfpr" rows="3" placeholder="自己PRがあれば入力">${escHtml(c.baseSelfPr || "")}</textarea>
+          <textarea class="form-textarea" id="aitools-email-selfpr" rows="3" placeholder="自己PRがあれば入力">${escHtml(c.baseSelfPr || state.profile.selfPr || "")}</textarea>
         </div>
         <button class="btn btn-ai mt-3" onclick="aitoolsGenerateEmail('${c.id}')">
           <svg viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M11.3 1.046A1 1 0 0112 2v5h4a1 1 0 01.82 1.573l-7 10A1 1 0 018 18v-5H4a1 1 0 01-.82-1.573l7-10a1 1 0 011.12-.38z" clip-rule="evenodd"/></svg>
@@ -2552,7 +2552,7 @@ function renderAiToolsContent(companyId) {
       content: `
         <div class="form-group">
           <label class="form-label">ベース自己PR <span style="color:var(--red)">*</span></label>
-          <textarea class="form-textarea" id="aitools-selfpr-base" rows="6" placeholder="現在の自己PRを入力">${escHtml(c.baseSelfPr || "")}</textarea>
+          <textarea class="form-textarea" id="aitools-selfpr-base" rows="6" placeholder="現在の自己PRを入力">${escHtml(c.baseSelfPr || state.profile.selfPr || "")}</textarea>
         </div>
         <button class="btn btn-ai mt-3" onclick="aitoolsOptimizeSelfPr('${c.id}')">
           <svg viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M11.3 1.046A1 1 0 0112 2v5h4a1 1 0 01.82 1.573l-7 10A1 1 0 018 18v-5H4a1 1 0 01-.82-1.573l7-10a1 1 0 011.12-.38z" clip-rule="evenodd"/></svg>
