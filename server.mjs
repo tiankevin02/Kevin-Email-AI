@@ -1619,7 +1619,12 @@ AIプロバイダー: Gemini=gemini, Anthropic/Claude=anthropic, OpenAI/GPT=open
 
     if (req.method === "POST" && url.pathname === "/api/jobs") {
       const body = await parseBody(req);
-      await writeJobsData({ companies: body.companies || [], schedules: body.schedules || [] });
+      await writeJobsData({
+        companies:  body.companies  || [],
+        schedules:  body.schedules  || [],
+        profile:    body.profile    || {},
+        updatedAt:  body.updatedAt  || Date.now(),
+      });
       sendJson(res, 200, { ok: true });
       return;
     }

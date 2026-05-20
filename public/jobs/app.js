@@ -222,8 +222,11 @@ async function loadData() {
 }
 
 function scheduleSave() {
+  // Immediately persist to localStorage — no data loss if browser closes before server sync
+  _writeStorage({ companies: state.companies, schedules: state.schedules, profile: state.profile, updatedAt: Date.now() });
+  // Debounce server sync (non-critical, localStorage is the source of truth)
   clearTimeout(saveTimer);
-  saveTimer = setTimeout(saveData, 800);
+  saveTimer = setTimeout(saveData, 1500);
 }
 
 async function _pushToServer() {
@@ -3038,5 +3041,12 @@ async function init() {
   await loadData();
   handleRoute();
 }
+
+// Flush any pending save to localStorage when the tab is closed/refreshed
+window.addEventListener("beforeunload", () => {
+  if (state.companies.length > 0) {
+    _writeStorage({ companies: state.companies, schedules: state.schedules, profile: state.profile, updatedAt: Date.now() });
+  }
+});
 
 init();
