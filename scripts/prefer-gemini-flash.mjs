@@ -17,8 +17,9 @@ replaceAll('body.geminiModel || state.config.geminiModel || "gemini-2.5-flash"',
 if (!source.includes("function geminiModelFallbacks")) {
   const marker = `function grokConfig(state) {`;
   const helper = `function geminiModelFallbacks(config) {
+  const preferredModel = /pro/i.test(config.model || "") ? "gemini-3-flash-preview" : config.model;
   return [
-    config.model,
+    preferredModel,
     "gemini-3-flash-preview",
     "gemini-2.5-flash"
   ].filter((model, index, all) => model && all.indexOf(model) === index);
