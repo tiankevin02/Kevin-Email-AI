@@ -152,30 +152,57 @@ async function fetchJson(path, opts = {}) {
 }
 
 const STORAGE_KEY = "shukatsu-ai-v1";
+const BACKUP_KEY  = "shukatsu-ai-backup";
 
-async function loadData() {
-  // localStorageを即時反映（速度優先・オフライン対応）
+/* データを安全に読む */
+function _readStorage(key) {
+  try { return JSON.parse(localStorage.getItem(key) || "{}"); } catch { return {}; }
+}
+
+/* データを両キーに書く（companies が 1件以上ある時だけBACKUPも更新） */
+function _writeStorage(entry) {
   try {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    if (raw) {
-      const cached = JSON.parse(raw);
-      state.companies = cached.companies || [];
-      state.schedules = cached.schedules || [];
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(entry));
+    if ((entry.companies || []).length > 0) {
+      localStorage.setItem(BACKUP_KEY, JSON.stringify(entry));
     }
   } catch {}
+}
 
-  // サーバーと同期（クロスデバイス）
+async function loadData() {
+  // ① メインキーから即時ロード
+  const main = _readStorage(STORAGE_KEY);
+  if ((main.companies || []).length > 0) {
+    state.companies = main.companies;
+    state.schedules = main.schedules || [];
+  }
+
+  // ② メインが空ならバックアップから復元
+  if (state.companies.length === 0) {
+    const backup = _readStorage(BACKUP_KEY);
+    if ((backup.companies || []).length > 0) {
+      state.companies = backup.companies;
+      state.schedules = backup.schedules || [];
+      _writeStorage({ ...backup, updatedAt: backup.updatedAt || Date.now() });
+      toast("バックアップからデータを復元しました", 4000);
+    }
+  }
+
+  // ③ サーバーと同期（サーバーがリセットされていても上書きしない）
   try {
     const data = await fetchJson("/api/jobs");
-    const serverTs = data.updatedAt || 0;
-    let localTs = 0;
-    try { localTs = JSON.parse(localStorage.getItem(STORAGE_KEY) || "{}").updatedAt || 0; } catch {}
+    const serverTs  = data.updatedAt || 0;
+    const localTs   = _readStorage(STORAGE_KEY).updatedAt || 0;
+    const serverHas = (data.companies || []).length > 0;
+    const localHas  = state.companies.length > 0;
 
-    if (serverTs >= localTs && (data.companies?.length || data.schedules?.length)) {
-      state.companies = data.companies || [];
+    if (serverHas && serverTs >= localTs) {
+      // サーバーが新しい → 使用
+      state.companies = data.companies;
       state.schedules = data.schedules || [];
-      localStorage.setItem(STORAGE_KEY, JSON.stringify({ companies: state.companies, schedules: state.schedules, updatedAt: serverTs }));
-    } else if (state.companies.length || state.schedules.length) {
+      _writeStorage({ companies: state.companies, schedules: state.schedules, updatedAt: serverTs });
+    } else if (localHas) {
+      // ローカルが新しい or サーバーが空 → サーバーへプッシュ
       await _pushToServer();
     }
   } catch {}
@@ -196,13 +223,19 @@ async function _pushToServer() {
 }
 
 async function saveData() {
+  // 既存データより少なくなる場合は保存しない（誤消去防止）
+  const existing = _readStorage(STORAGE_KEY);
+  const existingCount = (existing.companies || []).length;
+  if (existingCount > 0 && state.companies.length === 0) {
+    console.warn("[saveData] 空データへの上書きをブロックしました");
+    return;
+  }
+
   try {
     const updatedAt = await _pushToServer();
-    localStorage.setItem(STORAGE_KEY, JSON.stringify({ companies: state.companies, schedules: state.schedules, updatedAt }));
+    _writeStorage({ companies: state.companies, schedules: state.schedules, updatedAt });
   } catch {
-    try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify({ companies: state.companies, schedules: state.schedules, updatedAt: Date.now() }));
-    } catch {}
+    _writeStorage({ companies: state.companies, schedules: state.schedules, updatedAt: Date.now() });
     toast("オフライン保存しました（次回オンライン時に同期されます）", 3000);
   }
 }
@@ -2720,9 +2753,20 @@ function renderSettings() {
           <div class="settings-section-title">データ管理</div>
         </div>
         <div class="settings-section-body">
-          <div class="form-group">
+
+          <div class="form-group" style="background:var(--surface-2);border-radius:10px;padding:14px 16px;border:1px solid var(--border)">
+            <div style="font-size:13px;font-weight:700;margin-bottom:8px">💾 現在のデータ状況</div>
+            <div id="data-status-info" style="font-size:13px;color:var(--text-2);line-height:1.8">確認中...</div>
+            <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px">
+              <button class="btn btn-secondary btn-sm" onclick="checkDataStatus()">状況を再確認</button>
+              <button class="btn btn-secondary btn-sm" onclick="restoreFromBackup()">バックアップから復元</button>
+              <button class="btn btn-secondary btn-sm" onclick="forcePushToServer()">サーバーに強制同期</button>
+            </div>
+          </div>
+
+          <div class="form-group mt-3">
             <label class="form-label">データをエクスポート</label>
-            <div class="form-hint">JSONファイルとしてダウンロードします</div>
+            <div class="form-hint">JSONファイルとしてダウンロード（定期的に保存推奨）</div>
             <button class="btn btn-secondary mt-2" onclick="exportData()">データをエクスポート</button>
           </div>
           <div class="form-group">
@@ -2756,6 +2800,48 @@ function renderSettings() {
     </div>
   `;
   loadAiStatus();
+  checkDataStatus();
+}
+
+function checkDataStatus() {
+  const el = document.getElementById("data-status-info");
+  if (!el) return;
+  const main   = _readStorage(STORAGE_KEY);
+  const backup = _readStorage(BACKUP_KEY);
+  const mainCount   = (main.companies   || []).length;
+  const backupCount = (backup.companies || []).length;
+  const serverCount = state.companies.length;
+  const mainDate   = main.updatedAt   ? new Date(main.updatedAt).toLocaleString("ja-JP")   : "なし";
+  const backupDate = backup.updatedAt ? new Date(backup.updatedAt).toLocaleString("ja-JP") : "なし";
+  el.innerHTML = `
+    <div>🖥️ メモリ（現在表示）: <strong>${serverCount}社</strong></div>
+    <div>💾 メインストレージ: <strong>${mainCount}社</strong>（最終更新: ${mainDate}）</div>
+    <div>🛡️ バックアップ: <strong>${backupCount}社</strong>（最終更新: ${backupDate}）</div>
+  `;
+}
+
+function restoreFromBackup() {
+  const backup = _readStorage(BACKUP_KEY);
+  if (!(backup.companies || []).length) { toast("バックアップにデータがありません"); return; }
+  if (!confirm(`バックアップから${backup.companies.length}社のデータを復元しますか？\n現在のデータは上書きされます。`)) return;
+  state.companies = backup.companies;
+  state.schedules = backup.schedules || [];
+  _writeStorage({ companies: state.companies, schedules: state.schedules, updatedAt: Date.now() });
+  saveData();
+  toast(`${state.companies.length}社のデータをバックアップから復元しました`);
+  checkDataStatus();
+  renderDashboard();
+}
+
+async function forcePushToServer() {
+  if (!state.companies.length) { toast("現在表示されているデータがありません"); return; }
+  try {
+    await _pushToServer();
+    toast(`${state.companies.length}社のデータをサーバーに同期しました`);
+    checkDataStatus();
+  } catch (e) {
+    toast("サーバー同期に失敗しました: " + e.message, 5000);
+  }
 }
 
 async function loadAiStatus() {
@@ -2837,10 +2923,18 @@ function importData(input) {
 
 async function resetData() {
   if (!confirm("すべての就活データを削除します。本当によろしいですか？\nこの操作は取り消せません。")) return;
+  if (!confirm("最終確認です。本当に削除しますか？\n（バックアップキーは残るので設定→バックアップから復元できます）")) return;
   state.companies = [];
   state.schedules = [];
-  await saveData();
-  toast("データをリセットしました");
+  // saveDataのガードをバイパスして直接書き込む
+  try {
+    const updatedAt = Date.now();
+    await fetchJson("/api/jobs", { method: "POST", body: JSON.stringify({ companies: [], schedules: [], updatedAt }) });
+    localStorage.setItem(STORAGE_KEY, JSON.stringify({ companies: [], schedules: [], updatedAt }));
+  } catch {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify({ companies: [], schedules: [], updatedAt: Date.now() }));
+  }
+  toast("データをリセットしました（バックアップは保持されています）");
   navigate("#dashboard");
 }
 
