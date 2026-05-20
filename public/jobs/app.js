@@ -49,6 +49,8 @@ let filterIndustry = "all";
 let searchQuery = "";
 let _lpTimer = null;
 let _lpFired = false;
+let _lpScrolled = false;
+let _lpStartY = 0;
 let saveTimer = null;
 const collapseState = new Set();
 function toggleSection(id) {
@@ -508,28 +510,29 @@ function renderDashboard() {
           <div class="card-header">
             <span class="card-title">📋 マイページ管理</span>
           </div>
-          <div class="card-body" style="display:flex;flex-direction:column;gap:10px">
-            ${mypageList.map(c => `
-              <div style="padding:10px;background:var(--bg-surface);border-radius:10px;display:flex;flex-direction:column;gap:6px">
-                <div style="font-size:13.5px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escHtml(c.name)}</div>
-                ${c.mypageId ? `<div style="display:flex;align-items:center;gap:6px">
-                  <span style="font-size:11px;color:var(--text-3);flex-shrink:0">ID:</span>
-                  <span onclick="copyCompanyLoginId('${c.id}')" style="font-size:12px;color:var(--accent);cursor:pointer;font-family:monospace;background:var(--bg-hover);padding:2px 8px;border-radius:6px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:200px">${escHtml(c.mypageId)}</span>
-                  <span style="font-size:10px;color:var(--text-4)">タップでコピー</span>
-                </div>` : ""}
-                ${c.mypageUrl ? `<div
-                  onmousedown="mypagePressStart(event,'${c.id}')"
-                  onmouseup="mypagePressEnd(event,'${c.id}')"
-                  ontouchstart="mypagePressStart(event,'${c.id}')"
-                  ontouchend="mypagePressEnd(event,'${c.id}')"
-                  ontouchmove="mypagePressCancel()"
-                  onmouseleave="mypagePressCancel()"
-                  style="display:flex;align-items:center;gap:6px;cursor:pointer;padding:7px 10px;background:var(--accent);color:#fff;border-radius:8px;font-size:12px;font-weight:600;user-select:none"
-                >
-                  <svg viewBox="0 0 20 20" fill="currentColor" style="width:13px;height:13px;flex-shrink:0"><path fill-rule="evenodd" d="M12.586 4.586a2 2 0 112.828 2.828l-3 3a2 2 0 01-2.828 0 1 1 0 00-1.414 1.414 4 4 0 005.656 0l3-3a4 4 0 00-5.656-5.656l-1.5 1.5a1 1 0 101.414 1.414l1.5-1.5zm-5 5a2 2 0 012.828 0 1 1 0 101.414-1.414 4 4 0 00-5.656 0l-3 3a4 4 0 105.656 5.656l1.5-1.5a1 1 0 10-1.414-1.414l-1.5 1.5a2 2 0 11-2.828-2.828l3-3z" clip-rule="evenodd"/></svg>
-                  マイページを開く<span style="font-size:10px;opacity:0.65;margin-left:auto">長押しでメニュー</span>
-                </div>` : ""}
-              </div>`).join("")}
+          <div class="card-body">
+            <div style="display:grid;grid-template-columns:repeat(2,1fr);gap:8px">
+              ${mypageList.map(c => `
+                <div style="padding:10px;background:var(--bg-surface);border-radius:10px;display:flex;flex-direction:column;gap:6px">
+                  <div style="font-size:13px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escHtml(c.name)}</div>
+                  ${c.mypageId
+                    ? `<span onclick="copyCompanyLoginId('${c.id}')" title="タップでコピー" style="font-size:11px;color:var(--accent);cursor:pointer;font-family:monospace;background:var(--bg-hover);padding:2px 6px;border-radius:5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;display:block">${escHtml(c.mypageId)}</span>`
+                    : ""}
+                  ${c.mypageUrl
+                    ? `<button
+                        onmousedown="mypagePressStart(event,'${c.id}')"
+                        onmouseup="mypagePressEnd(event,'${c.id}')"
+                        ontouchstart="mypagePressStart(event,'${c.id}')"
+                        ontouchmove="mypagePressMove(event)"
+                        ontouchend="mypagePressEnd(event,'${c.id}')"
+                        onmouseleave="mypagePressCancel()"
+                        class="btn btn-secondary btn-sm"
+                        title="タップで開く・長押しでメニュー"
+                        style="width:100%;padding:4px 8px;font-size:11px;margin-top:auto"
+                      >開く</button>`
+                    : ""}
+                </div>`).join("")}
+            </div>
           </div>
         </div>`;
       })()}
@@ -578,7 +581,7 @@ function renderCompanies() {
       if (!industries.length) return "";
       return `<div class="filter-chips" id="industry-filters" style="margin-bottom:4px">
         <button class="filter-chip ${filterIndustry === "all" ? "active" : ""}" onclick="setIndustryFilter('all')">全業界</button>
-        ${industries.map(ind => `<button class="filter-chip ${filterIndustry === ind ? "active" : ""}" onclick="setIndustryFilter(${JSON.stringify(ind)})">${escHtml(ind)}</button>`).join("")}
+        ${industries.map(ind => `<button class="filter-chip ${filterIndustry === ind ? "active" : ""}" data-ind="${escHtml(ind)}" onclick="setIndustryFilter(this.dataset.ind)">${escHtml(ind)}</button>`).join("")}
       </div>`;
     })()}
 
@@ -664,31 +667,38 @@ function setStatusFilter(val) {
 
 function setIndustryFilter(val) {
   filterIndustry = val;
-  renderCompaniesList();
+  renderCompanies();
 }
 
 /* ===== Mypage long-press actions ===== */
 function mypagePressStart(e, cid) {
-  if (e.type === "touchstart") e.preventDefault();
   _lpFired = false;
+  _lpScrolled = false;
+  _lpStartY = e.touches ? e.touches[0].clientY : 0;
   _lpTimer = setTimeout(() => {
     _lpFired = true;
     showMypageMenu(cid);
-  }, 500);
+  }, 600);
+}
+
+function mypagePressMove(e) {
+  if (!_lpTimer) return;
+  const dy = e.touches ? Math.abs(e.touches[0].clientY - _lpStartY) : 0;
+  if (dy > 8) { _lpScrolled = true; mypagePressCancel(); }
 }
 
 function mypagePressEnd(e, cid) {
   if (_lpTimer) { clearTimeout(_lpTimer); _lpTimer = null; }
-  if (!_lpFired) {
+  if (!_lpFired && !_lpScrolled) {
     const c = getCompany(cid);
     if (c?.mypageUrl) window.open(c.mypageUrl, "_blank", "noopener");
   }
   _lpFired = false;
+  _lpScrolled = false;
 }
 
 function mypagePressCancel() {
   if (_lpTimer) { clearTimeout(_lpTimer); _lpTimer = null; }
-  _lpFired = false;
 }
 
 function showMypageMenu(cid) {
