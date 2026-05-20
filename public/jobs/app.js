@@ -826,7 +826,10 @@ function renderCompanyEvents(c) {
           <div class="event-meta">${fmtDateFull(evt.date)}${evt.time ? " " + evt.time : ""} · ${escHtml(evt.type)}</div>
         </div>
         <div class="event-actions">
-          <button class="btn btn-ghost btn-sm" onclick="deleteEvent('${evt.id}','company')">
+          <button class="btn btn-ghost btn-sm" onclick="openEditEventModal('${evt.id}')" title="編集">
+            <svg viewBox="0 0 20 20" fill="currentColor" style="width:14px;height:14px"><path d="M13.586 3.586a2 2 0 112.828 2.828l-.793.793-2.828-2.828.793-.793zM11.379 5.793L3 14.172V17h2.828l8.38-8.379-2.83-2.828z"/></svg>
+          </button>
+          <button class="btn btn-ghost btn-sm" onclick="deleteEvent('${evt.id}','company')" title="削除">
             <svg viewBox="0 0 20 20" fill="currentColor" style="width:14px;height:14px"><path fill-rule="evenodd" d="M9 2a1 1 0 00-.894.553L7.382 4H4a1 1 0 000 2v10a2 2 0 002 2h8a2 2 0 002-2V6a1 1 0 100-2h-3.382l-.724-1.447A1 1 0 0011 2H9zM7 8a1 1 0 012 0v6a1 1 0 11-2 0V8zm5-1a1 1 0 00-1 1v6a1 1 0 102 0V8a1 1 0 00-1-1z" clip-rule="evenodd"/></svg>
           </button>
         </div>
@@ -2123,35 +2126,43 @@ function renderCalendar() {
       ${calSelectedDate
         ? `<div class="flex items-center justify-between mb-3">
             <div style="font-size:15px;font-weight:700">${fmtDateFull(calSelectedDate)} の予定</div>
+            <button class="btn btn-secondary btn-sm" onclick="openAddEventModal(null,'${calSelectedDate}')">+ 追加</button>
           </div>
-          ${renderEventList(selectedEvts)}`
-        : ""}
+          ${renderEventList(selectedEvts, "calendar")}
+          <div style="font-size:12px;color:var(--text-4);margin-top:8px;text-align:center">もう一度タップで詳細を開く</div>`
+        : `<div style="font-size:13px;color:var(--text-4);text-align:center;padding:12px 0">日付をタップして予定を確認</div>`}
     </div>
 
     <div style="margin-top:24px">
       <div class="section-divider">今後の予定</div>
-      ${renderEventList(state.schedules.filter((s) => s.date >= todayStr).sort((a, b) => a.date.localeCompare(b.date)).slice(0, 10))}
+      ${renderEventList(state.schedules.filter((s) => s.date >= todayStr).sort((a, b) => a.date.localeCompare(b.date)).slice(0, 10), "calendar")}
     </div>
   `;
 }
 
-function renderEventList(evts) {
+function renderEventList(evts, source) {
   if (!evts.length) return `<p class="text-muted" style="text-align:center;padding:12px 0">予定がありません</p>`;
   return `<div class="event-list">${evts.map((evt) => {
     const col = EVENT_COLORS[evt.type] || EVENT_COLORS["その他"];
-    const co = evt.companyId ? getCompany(evt.companyId)?.name || "" : "";
+    const co = evt.companyId ? getCompany(evt.companyId) : null;
+    const isIv = evt.id.startsWith("iv-");
     return `
       <div class="event-item">
         <div class="event-type-bar" style="background:${col}"></div>
-        <div class="event-content">
+        <div class="event-content" style="flex:1;min-width:0">
           <div class="event-title">${escHtml(evt.title)}</div>
-          <div class="event-meta">${fmtDateFull(evt.date)}${evt.time ? " " + evt.time : ""}${co ? " · " + escHtml(co) : ""} · ${escHtml(evt.type)}</div>
+          <div class="event-meta">${fmtDateFull(evt.date)}${evt.time ? " " + evt.time : ""}${co ? ` · <a href="#company/${co.id}" style="color:var(--accent);text-decoration:none" onclick="event.stopPropagation()">${escHtml(co.name)}</a>` : ""} · ${escHtml(evt.type)}</div>
           ${evt.notes ? `<div class="text-sm text-muted mt-2">${escHtml(evt.notes)}</div>` : ""}
         </div>
         <div class="event-actions">
-          ${!evt.id.startsWith("iv-") ? `<button class="btn btn-ghost btn-sm" onclick="deleteEvent('${evt.id}','calendar')">
-            <svg viewBox="0 0 20 20" fill="currentColor" style="width:14px;height:14px"><path fill-rule="evenodd" d="M9 2a1 1 0 00-.894.553L7.382 4H4a1 1 0 000 2v10a2 2 0 002 2h8a2 2 0 002-2V6a1 1 0 100-2h-3.382l-.724-1.447A1 1 0 0011 2H9zM7 8a1 1 0 012 0v6a1 1 0 11-2 0V8zm5-1a1 1 0 00-1 1v6a1 1 0 102 0V8a1 1 0 00-1-1z" clip-rule="evenodd"/></svg>
-          </button>` : ""}
+          ${!isIv ? `
+            <button class="btn btn-ghost btn-sm" onclick="openEditEventModal('${evt.id}')" title="編集">
+              <svg viewBox="0 0 20 20" fill="currentColor" style="width:14px;height:14px"><path d="M13.586 3.586a2 2 0 112.828 2.828l-.793.793-2.828-2.828.793-.793zM11.379 5.793L3 14.172V17h2.828l8.38-8.379-2.83-2.828z"/></svg>
+            </button>
+            <button class="btn btn-ghost btn-sm" onclick="deleteEvent('${evt.id}','${source || 'calendar'}')" title="削除">
+              <svg viewBox="0 0 20 20" fill="currentColor" style="width:14px;height:14px"><path fill-rule="evenodd" d="M9 2a1 1 0 00-.894.553L7.382 4H4a1 1 0 000 2v10a2 2 0 002 2h8a2 2 0 002-2V6a1 1 0 100-2h-3.382l-.724-1.447A1 1 0 0011 2H9zM7 8a1 1 0 012 0v6a1 1 0 11-2 0V8zm5-1a1 1 0 00-1 1v6a1 1 0 102 0V8a1 1 0 00-1-1z" clip-rule="evenodd"/></svg>
+            </button>
+          ` : ""}
         </div>
       </div>
     `;
@@ -2159,8 +2170,33 @@ function renderEventList(evts) {
 }
 
 function selectCalDate(date) {
-  calSelectedDate = calSelectedDate === date ? null : date;
-  renderCalendar();
+  if (calSelectedDate === date) {
+    // 2回目クリック → 詳細モーダル
+    openCalDayModal(date);
+  } else {
+    calSelectedDate = date;
+    renderCalendar();
+  }
+}
+
+function openCalDayModal(date) {
+  const allEvents = [
+    ...state.schedules,
+    ...state.companies.flatMap(c =>
+      (c.interviews || []).filter(iv => iv.date === date).map(iv => ({
+        id: `iv-${iv.id}`, companyId: c.id,
+        title: `${c.name} ${iv.type}`, type: "面接",
+        date: iv.date, time: iv.time || "", notes: iv.location || "",
+      }))
+    ),
+  ].filter(e => e.date === date).sort((a, b) => (a.time || "").localeCompare(b.time || ""));
+
+  openModal(
+    fmtDateFull(date) + " の予定",
+    `<div style="min-height:60px">${renderEventList(allEvents, "calendar")}</div>`,
+    `<button class="btn btn-secondary" onclick="closeModal()">閉じる</button>
+     <button class="btn btn-primary" onclick="closeModal();openAddEventModal(null,'${date}')">+ 予定を追加</button>`
+  );
 }
 
 function calPrev() {
@@ -2185,47 +2221,81 @@ function calToday() {
   renderCalendar();
 }
 
-function openAddEventModal(companyId) {
-  const body = `
+function eventFormHtml({ companyId = null, date = null, type = "", time = "", notes = "", title = "" } = {}) {
+  return `
     <div class="form-group">
       <label class="form-label">タイトル <span style="color:var(--red)">*</span></label>
-      <input class="form-input" id="m-evt-title" placeholder="例: ◯◯社 ES締切" />
+      <input class="form-input" id="m-evt-title" placeholder="例: ◯◯社 ES締切" value="${escHtml(title)}" />
     </div>
     <div class="two-col mt-3">
       <div class="form-group">
         <label class="form-label">種別</label>
         <select class="form-select" id="m-evt-type">
-          ${EVENT_TYPES.map((t) => `<option value="${t}">${t}</option>`).join("")}
+          ${EVENT_TYPES.map(t => `<option value="${t}" ${t === type ? "selected" : ""}>${t}</option>`).join("")}
         </select>
       </div>
       <div class="form-group">
         <label class="form-label">企業（任意）</label>
         <select class="form-select" id="m-evt-company">
           <option value="">なし</option>
-          ${state.companies.map((c) => `<option value="${c.id}" ${c.id === companyId ? "selected" : ""}>${escHtml(c.name)}</option>`).join("")}
+          ${state.companies.map(c => `<option value="${c.id}" ${c.id === companyId ? "selected" : ""}>${escHtml(c.name)}</option>`).join("")}
         </select>
       </div>
     </div>
     <div class="two-col mt-3">
       <div class="form-group">
         <label class="form-label">日付 <span style="color:var(--red)">*</span></label>
-        <input class="form-input" id="m-evt-date" type="date" value="${calSelectedDate || today()}" />
+        <input class="form-input" id="m-evt-date" type="date" value="${date || calSelectedDate || today()}" />
       </div>
       <div class="form-group">
         <label class="form-label">時刻</label>
-        <input class="form-input" id="m-evt-time" type="time" />
+        <input class="form-input" id="m-evt-time" type="time" value="${time}" />
       </div>
     </div>
     <div class="form-group mt-3">
       <label class="form-label">メモ</label>
-      <textarea class="form-textarea" id="m-evt-notes" rows="2" placeholder="場所・URL・注意事項など"></textarea>
+      <textarea class="form-textarea" id="m-evt-notes" rows="2" placeholder="場所・URL・注意事項など">${escHtml(notes)}</textarea>
     </div>
   `;
-  openModal("予定を追加", body, `
+}
+
+function openAddEventModal(companyId, date) {
+  openModal("予定を追加", eventFormHtml({ companyId, date }), `
     <button class="btn btn-secondary" onclick="closeModal()">キャンセル</button>
     <button class="btn btn-primary" onclick="saveEvent()">追加</button>
   `);
   document.getElementById("m-evt-title")?.focus();
+}
+
+function openEditEventModal(eventId) {
+  const evt = state.schedules.find(s => s.id === eventId);
+  if (!evt) return;
+  openModal("予定を編集", eventFormHtml({ companyId: evt.companyId, date: evt.date, type: evt.type, time: evt.time, notes: evt.notes, title: evt.title }), `
+    <button class="btn btn-secondary" onclick="closeModal()">キャンセル</button>
+    <button class="btn btn-primary" onclick="saveEditEvent('${eventId}')">保存</button>
+  `);
+  document.getElementById("m-evt-title")?.focus();
+}
+
+function saveEditEvent(eventId) {
+  const evt = state.schedules.find(s => s.id === eventId);
+  if (!evt) return;
+  const title = document.getElementById("m-evt-title")?.value.trim();
+  const date  = document.getElementById("m-evt-date")?.value;
+  if (!title || !date) { toast("タイトルと日付を入力してください"); return; }
+  evt.title     = title;
+  evt.date      = date;
+  evt.type      = document.getElementById("m-evt-type")?.value || "その他";
+  evt.companyId = document.getElementById("m-evt-company")?.value || null;
+  evt.time      = document.getElementById("m-evt-time")?.value || "";
+  evt.notes     = document.getElementById("m-evt-notes")?.value.trim() || "";
+  evt.updatedAt = now();
+  scheduleSave();
+  closeModal();
+  toast("予定を更新しました");
+  if (currentView === "calendar") renderCalendar();
+  else if (currentView === "dashboard") renderDashboard();
+  else if (currentView === "company") renderCompany();
 }
 
 function saveEvent() {
