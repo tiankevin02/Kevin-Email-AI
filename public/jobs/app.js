@@ -268,31 +268,31 @@ function handleRoute() {
   const parts = hash.slice(1).split("/");
   const view = parts[0] || "dashboard";
 
+  const viewEl = document.getElementById(`view-${view}`);
+  if (!viewEl) return;
+
+  // Settings on mobile: pure overlay — never disturb the underlying view
+  if (view === "settings" && window.innerWidth <= 768) {
+    currentView = view;
+    document.querySelectorAll(".mobile-settings-btn").forEach(el => el.classList.add("active"));
+    const sv = viewEl;
+    sv.classList.remove("settings-closing");
+    renderSettings();
+    sv.classList.add("active", "settings-opening");
+    sv.addEventListener("animationend", () => sv.classList.remove("settings-opening"), { once: true });
+    return;
+  }
+
+  // Normal view switch
   document.querySelectorAll(".nav-item, .mobile-nav-item, .mobile-settings-btn").forEach((el) => {
     el.classList.toggle("active", el.dataset.view === view);
   });
-
   document.querySelectorAll(".view").forEach((el) => el.classList.remove("active"));
-
-  const viewEl = document.getElementById(`view-${view}`);
-  if (!viewEl) return;
 
   if (view === "company") {
     companyBackView = currentView === "calendar" ? "calendar" : "companies";
   }
   currentView = view;
-
-  // On mobile, render settings content while element is still hidden, then animate in
-  if (view === "settings" && window.innerWidth <= 768) {
-    viewEl.classList.remove("settings-closing");
-    renderSettings();
-    requestAnimationFrame(() => {
-      viewEl.classList.add("active", "settings-opening");
-      viewEl.addEventListener("animationend", () => viewEl.classList.remove("settings-opening"), { once: true });
-    });
-    return;
-  }
-
   viewEl.classList.add("active");
 
   if (view === "dashboard") renderDashboard();
@@ -311,17 +311,20 @@ window.addEventListener("hashchange", handleRoute);
 
 function toggleMobileSettings() {
   if (currentView === "settings") {
-    // 吸い込まれるアニメーションで閉じる
     const el = document.getElementById("view-settings");
     el.classList.remove("settings-opening");
     el.classList.add("settings-closing");
     setTimeout(() => {
       el.classList.remove("settings-closing", "active");
-      navigate(`#${settingsReturnView || "dashboard"}`);
+      // Previous view is still rendered underneath — just restore state
+      currentView = settingsReturnView || "dashboard";
+      history.replaceState(null, "", `#${currentView}`);
+      document.querySelectorAll(".nav-item, .mobile-nav-item, .mobile-settings-btn").forEach(b => {
+        b.classList.toggle("active", b.dataset.view === currentView);
+      });
     }, 280);
   } else {
-    // 開く前に戻り先を記憶
-    settingsReturnView = currentView || "dashboard";
+    settingsReturnView = location.hash.slice(1) || "dashboard";
     navigate("#settings");
   }
 }
