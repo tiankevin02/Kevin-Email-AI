@@ -15,7 +15,7 @@ const sessionsDir = path.join(dataDir, "sessions");
 const port = Number(env.PORT || process.env.PORT || 8787);
 const host = env.HOST || process.env.HOST || "127.0.0.1";
 
-const gmailScopes = ["https://www.googleapis.com/auth/gmail.modify", "https://www.googleapis.com/auth/gmail.send"];
+const gmailScopes = ["https://www.googleapis.com/auth/gmail.modify"];
 
 const defaultState = {
   profile: {
@@ -40,7 +40,7 @@ const defaultState = {
     openAIKey: "",
     openAIModel: "gpt-4o-mini",
     geminiApiKey: "",
-    geminiModel: "gemini-3.1-flash-lite",
+    geminiModel: "gemini-2.5-flash",
     grokApiKey: "",
     grokModel: "grok-4",
     anthropicApiKey: "",
@@ -259,35 +259,6 @@ function mergeState(base, next) {
   };
 }
 
-
-function sessionBackup(state) {
-  return {
-    version: 1,
-    savedAt: new Date().toISOString(),
-    google: state.google,
-    profile: state.profile,
-    senders: state.senders
-  };
-}
-
-function validateSessionBackup(backup) {
-  if (!backup || typeof backup !== "object") throw new Error("復元データが見つかりません。");
-  const google = backup.google || {};
-  const hasAccount = Object.values(google.accounts || {}).some(
-    (account) => account?.tokens?.refresh_token || account?.tokens?.access_token
-  );
-  if (!google.tokens && !hasAccount) throw new Error("Gmail接続の復元データがありません。");
-  return {
-    google: {
-      ...defaultState.google,
-      ...google,
-      oauthState: null
-    },
-    profile: backup.profile || {},
-    senders: backup.senders || {}
-  };
-}
-
 function sendJson(res, status, body) {
   const text = JSON.stringify(body);
   res.writeHead(status, {
@@ -326,7 +297,7 @@ function openAIConfig(state) {
 function geminiConfig(state) {
   return {
     key: env.GEMINI_API_KEY || state.config.geminiApiKey,
-    model: env.GEMINI_MODEL || state.config.geminiModel || "gemini-3.1-flash-lite"
+    model: env.GEMINI_MODEL || state.config.geminiModel || "gemini-2.5-flash"
   };
 }
 
@@ -411,8 +382,7 @@ async function tryProviderChat(provider, state, messages, temperature) {
         }
       );
       const body = await response.json();
-      if (!response.ok) throw new Error(`Gemini(${config.model}): ${body.error?.message || response.status}`);
-      return body.candidates?.[0]?.content?.parts?.[0]?.text?.trim() || "";
+      return response.ok ? (body.candidates?.[0]?.content?.parts?.[0]?.text?.trim() || "") : null;
     }
     case "anthropic": {
       if (!configuredAnthropic(state)) return null;
@@ -425,8 +395,7 @@ async function tryProviderChat(provider, state, messages, temperature) {
         body: JSON.stringify({ model: config.model, max_tokens: 4096, ...(system ? { system } : {}), messages: filtered })
       });
       const body = await response.json();
-      if (!response.ok) throw new Error(`Anthropic: ${body.error?.message || response.status}`);
-      return body.content?.[0]?.text?.trim() || "";
+      return response.ok ? (body.content?.[0]?.text?.trim() || "") : null;
     }
     case "openai": {
       if (!configuredOpenAI(state)) return null;
@@ -437,8 +406,7 @@ async function tryProviderChat(provider, state, messages, temperature) {
         body: JSON.stringify({ model: config.model, messages, temperature })
       });
       const body = await response.json();
-      if (!response.ok) throw new Error(`OpenAI: ${body.error?.message || response.status}`);
-      return body.choices?.[0]?.message?.content?.trim() || "";
+      return response.ok ? (body.choices?.[0]?.message?.content?.trim() || "") : null;
     }
     case "grok": {
       if (!configuredGrok(state)) return null;
@@ -449,8 +417,7 @@ async function tryProviderChat(provider, state, messages, temperature) {
         body: JSON.stringify({ model: config.model, messages, temperature })
       });
       const body = await response.json();
-      if (!response.ok) throw new Error(`Grok: ${body.error?.message || response.status}`);
-      return body.choices?.[0]?.message?.content?.trim() || "";
+      return response.ok ? (body.choices?.[0]?.message?.content?.trim() || "") : null;
     }
     default:
       return null;
@@ -463,14 +430,13 @@ async function callGemini(state, messages, temperature) {
 
 async function jobsAiChat(state, systemPrompt, userContent) {
   const messages = [{ role: "system", content: systemPrompt }, { role: "user", content: userContent }];
-  const errors = [];
   for (const provider of aiProviderOrder(state)) {
     try {
       const result = await tryProviderChat(provider, state, messages, 0.7);
       if (result !== null) return result;
-    } catch (e) { errors.push(e.message); }
+    } catch {}
   }
-  const err = new Error(errors.length ? `AI処理に失敗しました: ${errors.join(" / ")}` : "AIサービスが設定されていません。設定からAPIキーを入力してください。");
+  const err = new Error("AIサービスが設定されていません。設定からAPIキーを入力してください。");
   err.status = 400;
   throw err;
 }
@@ -773,9 +739,7 @@ async function chatComplete(state, messages, temperature = 0.35) {
     try {
       const result = await tryProviderChat(provider, state, messages, temperature);
       if (result !== null) return result;
-    } catch (e) {
-      console.error(`[AI] ${e.message}`);
-    }
+    } catch {}
   }
   return "";
 }
@@ -907,7 +871,7 @@ async function extractCareerScheduleItems(state, messages) {
     .slice(0, 40)
     .map(({ message }, index) => ({ ...message, sourceIndex: index }));
 
-  if (!configuredAI(state) || !candidates.length) return extractScheduleItems(candidates);
+  if (!configuredOpenAI(state) || !candidates.length) return extractScheduleItems(candidates);
 
   const source = candidates.map((message) => ({
     sourceIndex: message.sourceIndex,
@@ -1105,33 +1069,6 @@ async function route(req, res) {
       return;
     }
 
-
-    if (req.method === "GET" && url.pathname === "/api/session/backup") {
-      if (!state.google.tokens && !Object.keys(state.google.accounts || {}).length) {
-        sendJson(res, 200, { backup: null });
-        return;
-      }
-      sendJson(res, 200, { backup: sessionBackup(state) });
-      return;
-    }
-
-    if (req.method === "POST" && url.pathname === "/api/session/restore") {
-      const body = await parseBody(req);
-      const restored = validateSessionBackup(body.backup);
-      state.google = restored.google;
-      state.profile = { ...state.profile, ...restored.profile };
-      state.senders = { ...state.senders, ...restored.senders };
-      activeAccount(state);
-      await writeState(state);
-      sendJson(res, 200, {
-        restored: true,
-        gmailConnected: Boolean(state.google.tokens),
-        email: state.google.email,
-        accounts: accountsList(state)
-      });
-      return;
-    }
-
     if (req.method === "POST" && url.pathname === "/api/config") {
       const body = await parseBody(req);
       const nextConfig = {
@@ -1141,7 +1078,7 @@ async function route(req, res) {
         openAIKey: body.openAIKey || state.config.openAIKey || "",
         openAIModel: body.openAIModel || state.config.openAIModel || "gpt-4o-mini",
         geminiApiKey: body.geminiApiKey || state.config.geminiApiKey || "",
-        geminiModel: body.geminiModel || state.config.geminiModel || "gemini-3.1-flash-lite",
+        geminiModel: body.geminiModel || state.config.geminiModel || "gemini-2.5-flash",
         grokApiKey: body.grokApiKey || state.config.grokApiKey || "",
         grokModel: body.grokModel || state.config.grokModel || "grok-4",
         anthropicApiKey: body.anthropicApiKey || state.config.anthropicApiKey || "",
@@ -1347,7 +1284,7 @@ async function route(req, res) {
         .sort((a, b) => b.importance - a.importance || messageTime(b) - messageTime(a))
         .slice(0, 12);
       let digest = fallbackDigest(messages, period);
-      if (configuredAI(state) && important.length) {
+      if (configuredOpenAI(state) && important.length) {
         digest = await chatComplete(
           state,
           [
@@ -1488,9 +1425,8 @@ AIプロバイダー: Gemini=gemini, Anthropic/Claude=anthropic, OpenAI/GPT=open
 
     if (req.method === "POST" && url.pathname === "/api/jobs") {
       const body = await parseBody(req);
-      const updatedAt = body.updatedAt || Date.now();
-      await writeJobsData({ companies: body.companies || [], schedules: body.schedules || [], updatedAt });
-      sendJson(res, 200, { ok: true, updatedAt });
+      await writeJobsData({ companies: body.companies || [], schedules: body.schedules || [] });
+      sendJson(res, 200, { ok: true });
       return;
     }
 
@@ -1623,28 +1559,27 @@ AIプロバイダー: Gemini=gemini, Anthropic/Claude=anthropic, OpenAI/GPT=open
 
     if (req.method === "POST" && url.pathname === "/api/jobs/ai/es-advice") {
       const { companyName, question } = await parseBody(req);
-      if (!companyName || !question) { sendJson(res, 400, { error: "企業名・設問を入力してください。" }); return; }
-      const system = `あなたは${companyName}の人事採用担当AIです。
-まず${companyName}の企業理念・価値観・求める人材像をあなたの知識で整理し、書類選考の評価基準プロンプトを自分で作成してください。
-そのプロンプトを使って、応募者が以下の設問にどのような回答を書けばよいかアドバイスしてください。`;
-      const user = `【設問】${question}
+      if (!companyName || !question) { sendJson(res, 400, { error: "企業名と設問を入力してください。" }); return; }
+      const system = `あなたは${companyName}の人事採用担当です。ESの設問に対して、応募者が回答を作成するためのアドバイスを提供します。`;
+      const user = `【企業】${companyName}
+【設問】${question}
 
-## ${companyName}の書類選考評価基準（自作プロンプト）
-（まず企業理念に基づく評価基準を箇条書きで）
+以下の観点でアドバイスをマークダウンで提供してください：
 
-## この設問への回答アドバイス
+## 回答のアプローチ
+（この設問で企業が見たいこと、どう答えれば好印象か）
 
-### 盛り込むべき要素
-- （企業理念に合った必須要素を3〜5点）
+## 構成の提案
+1. （結論）
+2. （根拠・エピソード）
+3. （学び・成長）
+4. （企業への応用）
 
-### 構成案
-（結論→根拠→具体例の構成を提案）
+## 避けるべき表現・内容
+- （NG例）
 
-### 避けるべき表現・内容
-- （この企業に合わない内容）
-
-### 模範回答例（200字程度）
-（実際の回答例を提示）`;
+## 参考例文（100字程度）
+（書き出しの例）`;
       const advice = await jobsAiChat(state, system, user);
       sendJson(res, 200, { advice });
       return;
@@ -1653,28 +1588,31 @@ AIプロバイダー: Gemini=gemini, Anthropic/Claude=anthropic, OpenAI/GPT=open
     if (req.method === "POST" && url.pathname === "/api/jobs/ai/es-strategy") {
       const { companyName, esEntries } = await parseBody(req);
       if (!companyName) { sendJson(res, 400, { error: "企業名を入力してください。" }); return; }
-      const system = "あなたは就職活動のESコーチです。企業のES選考情報と対策を詳しく提供します。";
-      const entriesInfo = (esEntries || []).length > 0
-        ? `\n\n【登録済み設問】\n${(esEntries || []).map((e, i) => `${i + 1}. ${e.question}`).join("\n")}`
-        : "";
-      const user = `${companyName}のES（エントリーシート）についてマークダウンでまとめてください。${entriesInfo}
+      const questionsStr = (esEntries || []).map(e => `- ${e.question}`).join("\n") || "（設問未登録）";
+      const system = "あなたは就職活動の専門家です。企業のES（エントリーシート）対策に関する詳しい情報を提供します。";
+      const user = `${companyName}のES対策についてマークダウンで以下の形式で教えてください：
 
-## ${companyName}のES対策情報
+【登録されている設問】
+${questionsStr}
 
-### 企業理念・求める人物像
-（企業の特徴と重視するポイント）
+## ${companyName}のES対策
 
-### ESでよく聞かれる設問傾向
-（この企業特有の設問テーマ）
+### 企業の求める人物像
+（${companyName}がESで重視するポイント）
 
-### 選考通過のコツ
-（重要なポイントと差別化戦略）
+### よく出るES設問
+- （例年の傾向）
 
-### 使えるキーワード・表現
-（盛り込むと効果的な言葉）
+### 文章を書くときのポイント
+- （この企業特有のアドバイス）
+
+### 通過率を上げるコツ
+（差別化のポイント）
 
 ### 注意事項
-（避けるべき内容・よくある失敗）`;
+（字数制限、書式など）
+
+※不確かな情報は「要確認」と記載してください。`;
       const strategy = await jobsAiChat(state, system, user);
       sendJson(res, 200, { strategy });
       return;
@@ -1682,29 +1620,26 @@ AIプロバイダー: Gemini=gemini, Anthropic/Claude=anthropic, OpenAI/GPT=open
 
     if (req.method === "POST" && url.pathname === "/api/jobs/ai/iv-review") {
       const { companyName, interviewType, question, answer } = await parseBody(req);
-      if (!companyName || !question || !answer) { sendJson(res, 400, { error: "企業名・設問・回答を入力してください。" }); return; }
-      const system = `あなたは${companyName}の人事採用担当AIです。
-まず${companyName}の企業理念・価値観・求める人材像をあなたの知識で整理し、面接選考の評価基準プロンプトを自分で作成してください。
-そのプロンプトを使って、以下の面接の設問と回答を評価・添削してください。`;
-      const user = `【面接種別】${interviewType || "面接"}
+      if (!question || !answer) { sendJson(res, 400, { error: "設問と回答を入力してください。" }); return; }
+      const system = `あなたは${companyName || "企業"}の面接官です。面接の回答を添削します。`;
+      const user = `【企業】${companyName || "不明"}　【面接種別】${interviewType || "面接"}
 【設問】${question}
 【回答】${answer}
 
-## ${companyName}の面接評価基準（自作プロンプト）
-（まず企業理念に基づく評価基準を箇条書きで）
+以下の観点でマークダウンで添削してください：
 
 ## 評価
 **良かった点**
-- （2〜3点、具体的に）
+- （2〜3点）
 
 **改善が必要な点**
-- （2〜3点、具体的に）
+- （2〜3点）
 
-## 添削後の回答例
-（改善版の回答を提示）
+## 改善案
+（より良い回答例）
 
 ## 総評
-（100字程度）`;
+（80字程度）`;
       const review = await jobsAiChat(state, system, user);
       sendJson(res, 200, { review });
       return;
@@ -1712,29 +1647,27 @@ AIプロバイダー: Gemini=gemini, Anthropic/Claude=anthropic, OpenAI/GPT=open
 
     if (req.method === "POST" && url.pathname === "/api/jobs/ai/iv-advice") {
       const { companyName, interviewType, question } = await parseBody(req);
-      if (!companyName || !question) { sendJson(res, 400, { error: "企業名・設問を入力してください。" }); return; }
-      const system = `あなたは${companyName}の人事採用担当AIです。
-まず${companyName}の企業理念・価値観・求める人材像をあなたの知識で整理し、面接選考の評価基準プロンプトを自分で作成してください。
-そのプロンプトを使って、応募者が以下の面接の設問にどのように答えればよいかアドバイスしてください。`;
-      const user = `【面接種別】${interviewType || "面接"}
+      if (!question) { sendJson(res, 400, { error: "設問を入力してください。" }); return; }
+      const system = `あなたは就職活動の専門家です。面接の設問に対する回答のアドバイスを提供します。`;
+      const user = `【企業】${companyName || "不明"}　【面接種別】${interviewType || "面接"}
 【設問】${question}
 
-## ${companyName}の面接評価基準（自作プロンプト）
-（まず企業理念に基づく評価基準を箇条書きで）
+この設問への回答アドバイスをマークダウンで提供してください：
 
-## この設問への回答アドバイス
+## この設問の意図
+（面接官が何を見たいか）
 
-### 盛り込むべき要素
-- （企業理念に合った必須要素を3〜5点）
+## 回答の構成
+1. （結論・主張）
+2. （根拠・エピソード）
+3. （学び・成果）
+4. （入社後への展開）
 
-### 回答の構成
-（STAR法・結論先行などを使った構成を提案）
+## 効果的なポイント
+- （具体的なアドバイス）
 
-### 避けるべき回答
-- （この企業に合わない内容や表現）
-
-### 模範回答例（200字程度）
-（実際の回答例を提示）`;
+## 回答例（120字程度）
+（参考になる書き出し）`;
       const advice = await jobsAiChat(state, system, user);
       sendJson(res, 200, { advice });
       return;
@@ -1743,30 +1676,209 @@ AIプロバイダー: Gemini=gemini, Anthropic/Claude=anthropic, OpenAI/GPT=open
     if (req.method === "POST" && url.pathname === "/api/jobs/ai/iv-strategy") {
       const { companyName } = await parseBody(req);
       if (!companyName) { sendJson(res, 400, { error: "企業名を入力してください。" }); return; }
-      const system = "あなたは就職活動の面接コーチです。企業の面接選考情報と対策を詳しく提供します。";
-      const user = `${companyName}の面接選考についてマークダウンでまとめてください。
+      const system = "あなたは就職活動支援の専門家です。企業の面接情報と対策を詳しく提供します。";
+      const user = `${companyName}の面接対策についてマークダウンで以下の形式でまとめてください：
 
 ## ${companyName}の面接対策情報
 
-### 企業理念・求める人物像
-（企業の特徴と面接で重視するポイント）
-
-### 面接の流れ・選考ステップ
-（面接回数と各ステージの特徴）
+### 面接の形式・雰囲気
+（個人/グループ、雰囲気、面接官の特徴など）
 
 ### よく聞かれる質問（10問程度）
 - （箇条書き）
 
-### 選考通過のコツ
-（この企業の面接を通過するための重要ポイント）
+### 企業が重視するポイント
+（この企業特有の評価基準）
 
-### 逆質問例
-（好印象を与える逆質問を3〜5問）
+### 逆質問のコツ
+（おすすめの逆質問例）
 
-### 注意事項
-（避けるべき回答・よくある失敗）`;
+### 対策のポイント
+（この企業の面接を通過するための具体的アドバイス）
+
+※体験談・レビューサイトの情報を参考にした推測を含みます。`;
       const strategy = await jobsAiChat(state, system, user);
       sendJson(res, 200, { strategy });
+      return;
+    }
+
+    if (req.method === "POST" && url.pathname === "/api/jobs/ai/generate-email") {
+      const { companyName, industry, selectionType, emailType, selfPr, status } = await parseBody(req);
+      if (!companyName) { sendJson(res, 400, { error: "企業名を入力してください。" }); return; }
+      const system = "あなたは就職活動の文章作成のプロです。採用担当者に好印象を与える、礼儀正しく熱意が伝わるメールを作成します。";
+      const user = `以下の情報をもとに、${emailType || "応募"}メールを作成してください。
+
+【企業名】${companyName}
+【業界】${industry || "不明"}
+【選考タイプ】${selectionType || "インターン"}
+【メール種別】${emailType || "応募"}メール
+【自己PR/アピールポイント】${selfPr || "（未記載）"}
+
+件名も含めて、実際に送れる完成形のメールを作成してください。
+・丁寧で簡潔な文体
+・${companyName}への具体的な関心を盛り込む
+・件名: 〇〇（適切な件名）
+・本文: 書き出し〜締めまで完全に`;
+      const email = await jobsAiChat(state, system, user);
+      sendJson(res, 200, { email });
+      return;
+    }
+
+    if (req.method === "POST" && url.pathname === "/api/jobs/ai/scan-job") {
+      const { companyName, jobUrl, jobText } = await parseBody(req);
+      if (!jobUrl && !jobText) { sendJson(res, 400, { error: "URLまたはテキストを入力してください。" }); return; }
+      const system = "あなたは就職活動の情報分析の専門家です。求人情報から重要な情報を正確に抽出します。";
+      let content = jobText || "";
+      if (jobUrl && !content) {
+        try {
+          const r = await fetch(jobUrl, { headers: { "User-Agent": "Mozilla/5.0" }, signal: AbortSignal.timeout(8000) });
+          const html = await r.text();
+          content = html.replace(/<[^>]+>/g, " ").replace(/\s{2,}/g, " ").slice(0, 3000);
+        } catch { content = `URL: ${jobUrl}`; }
+      }
+      const user = `以下の求人情報を分析してください。
+企業名: ${companyName || "不明"}
+内容: ${content.slice(0, 2500)}
+
+## 求人情報分析
+
+### 企業情報
+（企業の特徴・事業内容）
+
+### 求める人物像
+（必須スキル・歓迎スキル・性格・経験）
+
+### 仕事内容・配属
+（インターン/選考内容の詳細）
+
+### 選考プロセス
+（応募→内定までのステップ）
+
+### アピールすべきポイント
+（この企業への応募で特に強調すべき点）`;
+      const result = await jobsAiChat(state, system, user);
+      sendJson(res, 200, { result });
+      return;
+    }
+
+    if (req.method === "POST" && url.pathname === "/api/jobs/ai/optimize-selfpr") {
+      const { companyName, industry, selectionType, basePr, esEntries } = await parseBody(req);
+      if (!companyName || !basePr) { sendJson(res, 400, { error: "企業名と自己PRを入力してください。" }); return; }
+      const esInfo = (esEntries || []).filter(e => e.answer).map(e => `Q: ${e.question}\nA: ${e.answer}`).join("\n\n");
+      const system = `あなたは${companyName}の人事採用担当AIです。${companyName}の企業理念・価値観・求める人材像をもとに、応募者の自己PRを最適化します。`;
+      const user = `【企業】${companyName}（${industry || "業界不明"}）【選考タイプ】${selectionType || "インターン"}
+
+【ベース自己PR】
+${basePr}
+
+${esInfo ? `【ESの回答（参考）】\n${esInfo}` : ""}
+
+以下の観点で最適化した自己PRを作成してください：
+1. ${companyName}の企業理念・求める人物像との整合性を高める
+2. 具体的なエピソードと数値を盛り込む
+3. 企業への志望意欲を自然に織り込む
+4. 200〜400字程度の最適化バージョンを提示
+5. 改善ポイントの解説も付ける
+
+## 最適化された自己PR（そのまま使える版）
+（最適化後のテキスト）
+
+## 改善ポイント
+- （何をどう変えたか）`;
+      const optimized = await jobsAiChat(state, system, user);
+      sendJson(res, 200, { optimized });
+      return;
+    }
+
+    if (req.method === "POST" && url.pathname === "/api/jobs/ai/gap-analysis") {
+      const { companyName, industry, selectionType, esEntries, selfPr, notes } = await parseBody(req);
+      if (!companyName) { sendJson(res, 400, { error: "企業名を入力してください。" }); return; }
+      const esInfo = (esEntries || []).filter(e => e.question).map(e => `Q: ${e.question}\nA: ${e.answer || "（未回答）"}`).join("\n\n");
+      const system = `あなたは${companyName}の人事採用担当AIです。企業が求めるものと応募者が持っているものを比較し、ギャップを明確に分析します。`;
+      const user = `【企業】${companyName}（${industry || ""}）【選考タイプ】${selectionType || "インターン"}
+
+【応募者の現状】
+自己PR: ${selfPr || "（未記載）"}
+メモ・志望動機: ${notes || "（未記載）"}
+ESの内容:
+${esInfo || "（未記載）"}
+
+## ギャップ分析
+
+### 企業が求めるもの（${companyName}の求める人物像）
+- （3〜5点）
+
+### あなたが持っているもの（現状の強み）
+- （記載内容から判断）
+
+### ギャップ（補強が必要な点）
+- （具体的に）
+
+### 今すぐできる対策
+1. （優先順位付きで3〜5項目）
+
+### 面接・ESで強調すべきポイント
+（この企業に対して特にアピールすべき内容）`;
+      const analysis = await jobsAiChat(state, system, user);
+      sendJson(res, 200, { analysis });
+      return;
+    }
+
+    if (req.method === "POST" && url.pathname === "/api/jobs/ai/mock-interview-start") {
+      const { companyName, interviewType } = await parseBody(req);
+      if (!companyName) { sendJson(res, 400, { error: "企業名を入力してください。" }); return; }
+      const system = `あなたは${companyName}の面接官です。${companyName}の企業理念と求める人物像を踏まえて面接を行います。`;
+      const user = `${companyName}の${interviewType || "一次面接"}として最初の質問を1つだけ考えてください。
+また、この面接の評価基準・コンテキストを簡潔にまとめてください。
+
+出力形式（JSON）:
+{
+  "question": "面接の最初の質問（自己紹介を含む自然な導入）",
+  "context": "この面接の評価基準・重視するポイント（100字以内）"
+}
+
+JSONのみを返してください。`;
+      const raw = await jobsAiChat(state, system, user);
+      let question = "自己紹介をお願いします。";
+      let context = "";
+      try {
+        const parsed = JSON.parse(raw.replace(/```json\n?|\n?```/g, "").trim());
+        question = parsed.question || question;
+        context = parsed.context || "";
+      } catch { question = raw.split("\n")[0].replace(/^["{\s]*"question"\s*:\s*"?/, "").replace(/"?\s*[,}].*/, "").trim() || question; }
+      sendJson(res, 200, { question, context });
+      return;
+    }
+
+    if (req.method === "POST" && url.pathname === "/api/jobs/ai/mock-interview-next") {
+      const { companyName, interviewType, question, answer, history, context } = await parseBody(req);
+      if (!question || !answer) { sendJson(res, 400, { error: "質問と回答を入力してください。" }); return; }
+      const system = `あなたは${companyName}の面接官です。評価基準: ${context || "企業理念に基づく評価"}`;
+      const histStr = (history || []).map(h => `Q: ${h.q}\nA: ${h.a}`).join("\n\n");
+      const user = `面接の流れ:
+${histStr ? histStr + "\n\n" : ""}Q: ${question}
+A: ${answer}
+
+上記の回答に対して：
+1. 簡潔なフィードバック（良い点・改善点、100字以内）
+2. 次の質問（前の回答を踏まえた自然な質問）
+
+出力形式（JSON）:
+{
+  "feedback": "フィードバック（100字以内）",
+  "nextQuestion": "次の質問"
+}
+
+JSONのみを返してください。`;
+      const raw = await jobsAiChat(state, system, user);
+      let feedback = "";
+      let nextQuestion = "他に自己PRはありますか？";
+      try {
+        const parsed = JSON.parse(raw.replace(/```json\n?|\n?```/g, "").trim());
+        feedback = parsed.feedback || "";
+        nextQuestion = parsed.nextQuestion || nextQuestion;
+      } catch { nextQuestion = raw.split("\n").find(l => l.includes("?") || l.includes("？")) || nextQuestion; }
+      sendJson(res, 200, { feedback, nextQuestion });
       return;
     }
 
