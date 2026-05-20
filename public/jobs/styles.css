@@ -1071,9 +1071,8 @@ img { max-width: 100%; }
   }
 
   @keyframes settingsOpen {
-    0%   { transform: scale(0.05); opacity: 0; filter: blur(6px); border-radius: 50%; }
-    60%  { border-radius: 14px; filter: blur(1px); }
-    100% { transform: scale(1);    opacity: 1; filter: blur(0);   border-radius: 0; }
+    0%   { opacity: 0; filter: blur(10px); transform: scale(0.97); }
+    100% { opacity: 1; filter: blur(0);    transform: scale(1); }
   }
   @keyframes settingsClose {
     0%   { opacity: 1; filter: blur(0);   transform: scale(1); }
@@ -1081,7 +1080,7 @@ img { max-width: 100%; }
   }
 
   #view-settings.settings-opening {
-    animation: settingsOpen 0.4s cubic-bezier(0.34, 1.2, 0.64, 1) both;
+    animation: settingsOpen 0.28s cubic-bezier(0, 0, 0.4, 1) both;
   }
   #view-settings.settings-closing {
     animation: settingsClose 0.24s cubic-bezier(0.4, 0, 1, 1) both;
