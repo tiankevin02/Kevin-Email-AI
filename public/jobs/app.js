@@ -821,8 +821,8 @@ function changeCompanyStatus(id, status) {
 function renderOverviewTab(c) {
   return `
     <div style="display:grid;gap:16px;max-width:680px">
-      <div class="card">
-        <div class="card-header"><span class="card-title">基本情報</span></div>
+      <div class="card${collapseState.has(`card-basic-${c.id}`) ? ' collapsed' : ''}" id="card-basic-${c.id}">
+        <div class="card-header collapse-trigger" onclick="toggleSection('card-basic-${c.id}')"><div style="display:flex;align-items:center;gap:6px">${CHEV}<span class="card-title">基本情報</span></div></div>
         <div class="card-body" style="display:grid;gap:12px">
           <div class="form-group">
             <label class="form-label">企業名</label>
@@ -849,8 +849,9 @@ function renderOverviewTab(c) {
         </div>
       </div>
 
-      <div class="card">
-        <div class="card-header"><span class="card-title">選考スケジュール</span>
+      <div class="card${collapseState.has(`card-schedule-${c.id}`) ? ' collapsed' : ''}" id="card-schedule-${c.id}">
+        <div class="card-header">
+          <div onclick="toggleSection('card-schedule-${c.id}')" style="display:flex;align-items:center;gap:6px;cursor:pointer;user-select:none">${CHEV}<span class="card-title">選考スケジュール</span></div>
           <button class="btn btn-secondary btn-sm" onclick="openAddEventModal('${c.id}')">+ 予定を追加</button>
         </div>
         <div class="card-body">
@@ -901,9 +902,9 @@ function renderEsTab(c) {
   const meta = c.esMeta || {};
   return `
     <div style="max-width:720px">
-      <div class="card mb-4">
+      <div class="card mb-4${collapseState.has(`card-es-info-${c.id}`) ? ' collapsed' : ''}" id="card-es-info-${c.id}">
         <div class="card-header">
-          <span class="card-title">ES対策情報</span>
+          <div onclick="toggleSection('card-es-info-${c.id}')" style="display:flex;align-items:center;gap:6px;cursor:pointer;user-select:none">${CHEV}<span class="card-title">ES対策情報</span></div>
           <button class="btn btn-ai btn-sm" onclick="runEsStrategy('${c.id}')">
             <svg viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M11.3 1.046A1 1 0 0112 2v5h4a1 1 0 01.82 1.573l-7 10A1 1 0 018 18v-5H4a1 1 0 01-.82-1.573l7-10a1 1 0 011.12-.38z" clip-rule="evenodd"/></svg>
             AIに調べてもらう
@@ -919,8 +920,8 @@ function renderEsTab(c) {
         </div>
       </div>
 
-      <div class="card mb-4">
-        <div class="card-header"><span class="card-title">自分のメモ</span></div>
+      <div class="card mb-4${collapseState.has(`card-es-notes-${c.id}`) ? ' collapsed' : ''}" id="card-es-notes-${c.id}">
+        <div class="card-header collapse-trigger" onclick="toggleSection('card-es-notes-${c.id}')"><div style="display:flex;align-items:center;gap:6px">${CHEV}<span class="card-title">自分のメモ</span></div></div>
         <div class="card-body">
           <textarea class="form-textarea" rows="4" onchange="updateEsMeta('${c.id}','notes',this.value)" placeholder="ES対策のメモ、準備内容、気づきなど">${escHtml(meta.notes || "")}</textarea>
         </div>
@@ -1200,9 +1201,9 @@ function renderWebtestTab(c) {
   const wt = c.webTest || {};
   return `
     <div style="max-width:680px">
-      <div class="card mb-4">
+      <div class="card mb-4${collapseState.has(`card-web-info-${c.id}`) ? ' collapsed' : ''}" id="card-web-info-${c.id}">
         <div class="card-header">
-          <span class="card-title">WEBテスト情報</span>
+          <div onclick="toggleSection('card-web-info-${c.id}')" style="display:flex;align-items:center;gap:6px;cursor:pointer;user-select:none">${CHEV}<span class="card-title">WEBテスト情報</span></div>
           <button class="btn btn-ai btn-sm" onclick="runWebtestInfo('${c.id}')">
             <svg viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M11.3 1.046A1 1 0 0112 2v5h4a1 1 0 01.82 1.573l-7 10A1 1 0 018 18v-5H4a1 1 0 01-.82-1.573l7-10a1 1 0 011.12-.38z" clip-rule="evenodd"/></svg>
             AIに調べてもらう
@@ -1218,8 +1219,8 @@ function renderWebtestTab(c) {
         </div>
       </div>
 
-      <div class="card">
-        <div class="card-header"><span class="card-title">自分のメモ</span></div>
+      <div class="card${collapseState.has(`card-web-notes-${c.id}`) ? ' collapsed' : ''}" id="card-web-notes-${c.id}">
+        <div class="card-header collapse-trigger" onclick="toggleSection('card-web-notes-${c.id}')"><div style="display:flex;align-items:center;gap:6px">${CHEV}<span class="card-title">自分のメモ</span></div></div>
         <div class="card-body">
           <div class="form-group">
             <label class="form-label">メモ・対策記録</label>
@@ -1274,9 +1275,9 @@ function renderInterviewTab(c) {
   const meta = c.ivMeta || {};
   return `
     <div style="max-width:720px">
-      <div class="card mb-4">
+      <div class="card mb-4${collapseState.has(`card-iv-info-${c.id}`) ? ' collapsed' : ''}" id="card-iv-info-${c.id}">
         <div class="card-header">
-          <span class="card-title">面接対策情報</span>
+          <div onclick="toggleSection('card-iv-info-${c.id}')" style="display:flex;align-items:center;gap:6px;cursor:pointer;user-select:none">${CHEV}<span class="card-title">面接対策情報</span></div>
           <button class="btn btn-ai btn-sm" onclick="runIvStrategy('${c.id}')">
             <svg viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M11.3 1.046A1 1 0 0112 2v5h4a1 1 0 01.82 1.573l-7 10A1 1 0 018 18v-5H4a1 1 0 01-.82-1.573l7-10a1 1 0 011.12-.38z" clip-rule="evenodd"/></svg>
             AIに調べてもらう
@@ -1292,8 +1293,8 @@ function renderInterviewTab(c) {
         </div>
       </div>
 
-      <div class="card mb-4">
-        <div class="card-header"><span class="card-title">自分のメモ</span></div>
+      <div class="card mb-4${collapseState.has(`card-iv-notes-${c.id}`) ? ' collapsed' : ''}" id="card-iv-notes-${c.id}">
+        <div class="card-header collapse-trigger" onclick="toggleSection('card-iv-notes-${c.id}')"><div style="display:flex;align-items:center;gap:6px">${CHEV}<span class="card-title">自分のメモ</span></div></div>
         <div class="card-body">
           <textarea class="form-textarea" rows="4" onchange="updateIvMeta('${c.id}','notes',this.value)" placeholder="面接対策のメモ、準備内容、気づきなど">${escHtml(meta.notes || "")}</textarea>
         </div>
@@ -1814,10 +1815,8 @@ function renderToolsTab(c) {
   return `
     <div style="max-width:720px;display:grid;gap:20px">
 
-      <div class="card">
-        <div class="card-header">
-          <span class="card-title">応募メール生成</span>
-        </div>
+      <div class="card${collapseState.has(`card-tool-email-${c.id}`) ? ' collapsed' : ''}" id="card-tool-email-${c.id}">
+        <div class="card-header collapse-trigger" onclick="toggleSection('card-tool-email-${c.id}')"><div style="display:flex;align-items:center;gap:6px">${CHEV}<span class="card-title">応募メール生成</span></div></div>
         <div class="card-body">
           <p style="font-size:13px;color:var(--text-3);margin-bottom:12px">企業情報とあなたのプロフィールをもとに、最適な応募メールを1クリックで生成します</p>
           <div class="form-group">
@@ -1841,10 +1840,8 @@ function renderToolsTab(c) {
         </div>
       </div>
 
-      <div class="card">
-        <div class="card-header">
-          <span class="card-title">求人URL・テキストスキャン</span>
-        </div>
+      <div class="card${collapseState.has(`card-tool-scan-${c.id}`) ? ' collapsed' : ''}" id="card-tool-scan-${c.id}">
+        <div class="card-header collapse-trigger" onclick="toggleSection('card-tool-scan-${c.id}')"><div style="display:flex;align-items:center;gap:6px">${CHEV}<span class="card-title">求人URL・テキストスキャン</span></div></div>
         <div class="card-body">
           <p style="font-size:13px;color:var(--text-3);margin-bottom:12px">求人URLまたは求人票テキストを貼り付けると、企業情報・求める人物像・必要スキルを自動抽出します</p>
           <div class="form-group">
@@ -1865,9 +1862,9 @@ function renderToolsTab(c) {
         </div>
       </div>
 
-      <div class="card">
-        <div class="card-header">
-          <span class="card-title">自己PR最適化</span>
+      <div class="card${collapseState.has(`card-tool-selfpr-${c.id}`) ? ' collapsed' : ''}" id="card-tool-selfpr-${c.id}">
+        <div class="card-header collapse-trigger" onclick="toggleSection('card-tool-selfpr-${c.id}')">
+          <div style="display:flex;align-items:center;gap:6px">${CHEV}<span class="card-title">自己PR最適化</span></div>
         </div>
         <div class="card-body">
           <p style="font-size:13px;color:var(--text-3);margin-bottom:12px">ベースとなる自己PRを${escHtml(c.name)}の企業理念・求める人物像に合わせて最適化します</p>
@@ -1885,9 +1882,9 @@ function renderToolsTab(c) {
         </div>
       </div>
 
-      <div class="card">
-        <div class="card-header">
-          <span class="card-title">ギャップ分析</span>
+      <div class="card${collapseState.has(`card-tool-gap-${c.id}`) ? ' collapsed' : ''}" id="card-tool-gap-${c.id}">
+        <div class="card-header collapse-trigger" onclick="toggleSection('card-tool-gap-${c.id}')">
+          <div style="display:flex;align-items:center;gap:6px">${CHEV}<span class="card-title">ギャップ分析</span></div>
         </div>
         <div class="card-body">
           <p style="font-size:13px;color:var(--text-3);margin-bottom:12px">企業が求めるものとあなたのESや自己PRを比較し、アピールすべき点と補強が必要な点を分析します</p>
@@ -1901,9 +1898,9 @@ function renderToolsTab(c) {
         </div>
       </div>
 
-      <div class="card">
+      <div class="card${collapseState.has(`card-tool-mock-${c.id}`) ? ' collapsed' : ''}" id="card-tool-mock-${c.id}">
         <div class="card-header">
-          <span class="card-title">面接シミュレーター</span>
+          <div onclick="toggleSection('card-tool-mock-${c.id}')" style="display:flex;align-items:center;gap:6px;cursor:pointer;user-select:none">${CHEV}<span class="card-title">面接シミュレーター</span></div>
           <span style="font-size:11px;background:var(--accent);color:#fff;padding:2px 8px;border-radius:99px">NEW</span>
         </div>
         <div class="card-body">
