@@ -1092,8 +1092,7 @@ img { max-width: 100%; }
   .companies-grid .company-card { padding: 12px 11px; }
   .companies-grid .company-name { font-size: 13px; }
   .companies-grid .company-industry { font-size: 11px; }
-  .companies-grid .company-card-header { gap: 6px; margin-bottom: 8px; align-items: flex-start; }
-  .companies-grid .company-card-header .chip { padding: 2px 7px; font-size: 10.5px; min-height: 18px; flex-shrink: 0; }
+  .companies-grid .chip { padding: 2px 7px; font-size: 10.5px; min-height: 18px; flex-shrink: 0; }
   .companies-grid .selection-type-badge { font-size: 10px; padding: 1px 6px; }
   .companies-grid .company-card-footer { margin-top: 8px; flex-wrap: wrap; gap: 4px; }
   .companies-grid .company-progress span.text-sm { display: none; }

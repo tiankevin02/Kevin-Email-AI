@@ -45,7 +45,10 @@ let companyBackView = "companies";
 let settingsReturnView = "dashboard";
 let filterStatus = "all";
 let filterSelectionType = "all";
+let filterIndustry = "all";
 let searchQuery = "";
+let _lpTimer = null;
+let _lpFired = false;
 let saveTimer = null;
 const collapseState = new Set();
 function toggleSection(id) {
@@ -481,18 +484,34 @@ function renderDashboard() {
         </div>
       </div>
       ${(() => {
-        const mypageList = state.companies.filter(c => c.mypageUrl);
+        const mypageList = state.companies.filter(c => c.mypageUrl || c.mypageId);
         if (!mypageList.length) return "";
         return `
         <div class="card" style="margin-top:16px">
           <div class="card-header">
-            <span class="card-title">📋 マイページリンク</span>
+            <span class="card-title">📋 マイページ管理</span>
           </div>
-          <div class="card-body" style="display:flex;flex-direction:column;gap:8px">
+          <div class="card-body" style="display:flex;flex-direction:column;gap:10px">
             ${mypageList.map(c => `
-              <div style="display:flex;align-items:center;justify-content:space-between;gap:8px">
-                <span style="font-size:13.5px;font-weight:600;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escHtml(c.name)}</span>
-                <a href="${escHtml(c.mypageUrl)}" target="_blank" rel="noopener" class="btn btn-secondary btn-sm" style="flex-shrink:0">開く</a>
+              <div style="padding:10px;background:var(--bg-surface);border-radius:10px;display:flex;flex-direction:column;gap:6px">
+                <div style="font-size:13.5px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escHtml(c.name)}</div>
+                ${c.mypageId ? `<div style="display:flex;align-items:center;gap:6px">
+                  <span style="font-size:11px;color:var(--text-3);flex-shrink:0">ID:</span>
+                  <span onclick="copyCompanyLoginId('${c.id}')" style="font-size:12px;color:var(--accent);cursor:pointer;font-family:monospace;background:var(--bg-hover);padding:2px 8px;border-radius:6px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:200px">${escHtml(c.mypageId)}</span>
+                  <span style="font-size:10px;color:var(--text-4)">タップでコピー</span>
+                </div>` : ""}
+                ${c.mypageUrl ? `<div
+                  onmousedown="mypagePressStart(event,'${c.id}')"
+                  onmouseup="mypagePressEnd(event,'${c.id}')"
+                  ontouchstart="mypagePressStart(event,'${c.id}')"
+                  ontouchend="mypagePressEnd(event,'${c.id}')"
+                  ontouchmove="mypagePressCancel()"
+                  onmouseleave="mypagePressCancel()"
+                  style="display:flex;align-items:center;gap:6px;cursor:pointer;padding:7px 10px;background:var(--accent);color:#fff;border-radius:8px;font-size:12px;font-weight:600;user-select:none"
+                >
+                  <svg viewBox="0 0 20 20" fill="currentColor" style="width:13px;height:13px;flex-shrink:0"><path fill-rule="evenodd" d="M12.586 4.586a2 2 0 112.828 2.828l-3 3a2 2 0 01-2.828 0 1 1 0 00-1.414 1.414 4 4 0 005.656 0l3-3a4 4 0 00-5.656-5.656l-1.5 1.5a1 1 0 101.414 1.414l1.5-1.5zm-5 5a2 2 0 012.828 0 1 1 0 101.414-1.414 4 4 0 00-5.656 0l-3 3a4 4 0 105.656 5.656l1.5-1.5a1 1 0 10-1.414-1.414l-1.5 1.5a2 2 0 11-2.828-2.828l3-3z" clip-rule="evenodd"/></svg>
+                  マイページを開く<span style="font-size:10px;opacity:0.65;margin-left:auto">長押しでメニュー</span>
+                </div>` : ""}
               </div>`).join("")}
           </div>
         </div>`;
@@ -529,13 +548,22 @@ function renderCompanies() {
       <button class="filter-chip ${filterSelectionType === "本選考" ? "active" : ""}" onclick="setSelectionTypeFilter('本選考')">本選考</button>
     </div>
 
-    <div class="filter-chips" id="status-filters">
+    <div class="filter-chips" id="status-filters" style="margin-bottom:8px">
       <button class="filter-chip ${filterStatus === "all" ? "active" : ""}" onclick="setStatusFilter('all')">すべて</button>
       ${STATUSES.map(
         (s) =>
           `<button class="filter-chip ${filterStatus === s.value ? "active" : ""}" onclick="setStatusFilter('${s.value}')">${s.label}</button>`
       ).join("")}
     </div>
+
+    ${(() => {
+      const industries = [...new Set(state.companies.map(c => c.industry).filter(v => v && v.trim()))].sort();
+      if (!industries.length) return "";
+      return `<div class="filter-chips" id="industry-filters" style="margin-bottom:4px">
+        <button class="filter-chip ${filterIndustry === "all" ? "active" : ""}" onclick="setIndustryFilter('all')">全業界</button>
+        ${industries.map(ind => `<button class="filter-chip ${filterIndustry === ind ? "active" : ""}" onclick="setIndustryFilter(${JSON.stringify(ind)})">${escHtml(ind)}</button>`).join("")}
+      </div>`;
+    })()}
 
     <div style="margin-top:16px" id="companies-list"></div>
   `;
@@ -550,6 +578,7 @@ function renderCompaniesList() {
   let filtered = state.companies;
   if (filterStatus !== "all") filtered = filtered.filter((c) => c.status === filterStatus);
   if (filterSelectionType !== "all") filtered = filtered.filter((c) => (c.selectionType || "インターン") === filterSelectionType);
+  if (filterIndustry !== "all") filtered = filtered.filter((c) => (c.industry || "") === filterIndustry);
   if (searchQuery) {
     const q = searchQuery.toLowerCase();
     filtered = filtered.filter((c) => c.name.toLowerCase().includes(q) || (c.industry || "").toLowerCase().includes(q));
@@ -582,16 +611,12 @@ function companyCardHtml(c) {
 
   return `
     <div class="company-card" onclick="navigate('#company/${c.id}')">
-      <div class="company-card-header">
-        <div>
-          <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">
-            <div class="company-name">${escHtml(c.name)}</div>
-            <span class="selection-type-badge ${selType === '本選考' ? 'badge-honsen' : 'badge-intern'}">${selType}</span>
-          </div>
-          <div class="company-industry">${escHtml(c.industry || "業界未設定")}</div>
-        </div>
+      <div class="company-name" style="margin-bottom:5px">${escHtml(c.name)}</div>
+      <div style="display:flex;align-items:center;gap:5px;flex-wrap:wrap;margin-bottom:4px">
+        <span class="selection-type-badge ${selType === '本選考' ? 'badge-honsen' : 'badge-intern'}">${selType}</span>
         ${statusChip(c.status)}
       </div>
+      <div class="company-industry">${escHtml(c.industry || "業界未設定")}</div>
       <div class="company-card-footer">
         <div class="company-progress">
           <div class="progress-dot ${hasEs ? "done" : ""}" title="ES"></div>
@@ -618,6 +643,72 @@ function setSelectionTypeFilter(val) {
 function setStatusFilter(val) {
   filterStatus = val;
   renderCompanies();
+}
+
+function setIndustryFilter(val) {
+  filterIndustry = val;
+  renderCompaniesList();
+}
+
+/* ===== Mypage long-press actions ===== */
+function mypagePressStart(e, cid) {
+  if (e.type === "touchstart") e.preventDefault();
+  _lpFired = false;
+  _lpTimer = setTimeout(() => {
+    _lpFired = true;
+    showMypageMenu(cid);
+  }, 500);
+}
+
+function mypagePressEnd(e, cid) {
+  if (_lpTimer) { clearTimeout(_lpTimer); _lpTimer = null; }
+  if (!_lpFired) {
+    const c = getCompany(cid);
+    if (c?.mypageUrl) window.open(c.mypageUrl, "_blank", "noopener");
+  }
+  _lpFired = false;
+}
+
+function mypagePressCancel() {
+  if (_lpTimer) { clearTimeout(_lpTimer); _lpTimer = null; }
+  _lpFired = false;
+}
+
+function showMypageMenu(cid) {
+  document.getElementById("mypage-menu")?.remove();
+  const c = getCompany(cid);
+  if (!c?.mypageUrl) return;
+  const menu = document.createElement("div");
+  menu.id = "mypage-menu";
+  menu.innerHTML = `
+    <div style="position:fixed;inset:0;z-index:1000" onclick="document.getElementById('mypage-menu').remove()"></div>
+    <div style="position:fixed;bottom:0;left:0;right:0;z-index:1001;background:var(--bg-card);border-radius:16px 16px 0 0;padding:20px 16px 32px;box-shadow:0 -4px 24px rgba(0,0,0,.18)">
+      <div style="font-size:13px;font-weight:700;margin-bottom:3px">${escHtml(c.name)}</div>
+      <div style="font-size:11px;color:var(--text-3);margin-bottom:18px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escHtml(c.mypageUrl)}</div>
+      <button class="btn btn-primary" style="width:100%;margin-bottom:10px" onclick="openMypageFromMenu('${cid}')">開く</button>
+      <button class="btn btn-secondary" style="width:100%" onclick="copyMypageFromMenu('${cid}')">URLをコピー</button>
+    </div>
+  `;
+  document.body.appendChild(menu);
+}
+
+function openMypageFromMenu(cid) {
+  const c = getCompany(cid);
+  if (c?.mypageUrl) window.open(c.mypageUrl, "_blank", "noopener");
+  document.getElementById("mypage-menu")?.remove();
+}
+
+function copyMypageFromMenu(cid) {
+  const c = getCompany(cid);
+  if (c?.mypageUrl) { navigator.clipboard.writeText(c.mypageUrl); toast("URLをコピーしました"); }
+  document.getElementById("mypage-menu")?.remove();
+}
+
+function copyCompanyLoginId(cid) {
+  const c = getCompany(cid);
+  if (!c?.mypageId) return;
+  navigator.clipboard.writeText(c.mypageId);
+  toast(`${c.name} のIDをコピーしました`);
 }
 
 /* ===== Add Company Modal ===== */
@@ -840,6 +931,10 @@ function renderOverviewTab(c) {
             <div class="form-group">
               <label class="form-label">マイページURL</label>
               <input class="form-input" type="url" value="${escHtml(c.mypageUrl || "")}" onchange="updateCompanyField('${c.id}','mypageUrl',this.value)" placeholder="https://mypage.xxx.co.jp/..." />
+            </div>
+            <div class="form-group">
+              <label class="form-label">マイページ ログインID</label>
+              <input class="form-input" type="text" value="${escHtml(c.mypageId || "")}" onchange="updateCompanyField('${c.id}','mypageId',this.value)" placeholder="メールアドレス・学籍番号など" />
             </div>
           </div>
           <div class="form-group">
