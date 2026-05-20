@@ -1917,9 +1917,44 @@ JSONのみを返してください。`;
       return;
     }
 
+    if (req.method === "POST" && url.pathname === "/api/quiz/answer") {
+      const { question, type } = await parseBody(req);
+      if (!question) { sendJson(res, 400, { error: "問題文を入力してください。" }); return; }
+      if (!configuredAI(state)) {
+        const err = new Error("AIサービスが設定されていません。設定からAPIキーを入力してください。");
+        err.status = 400;
+        throw err;
+      }
+      const typeDescriptions = {
+        verbal: "言語（国語・読解・語彙・文章整序など）",
+        nonverbal: "非言語（数学・計算・推論・図形・場合の数など）",
+        english: "英語（読解・文法・語彙など）",
+        personality: "性格検査（傾向の説明と一般的な回答のポイント）",
+        other: "その他の適性検査"
+      };
+      const typeHint = typeDescriptions[type] || "言語・非言語・英語など各種Webテスト問題";
+      const system = `あなたはSPI・TG-WEB・GABなど日本のWebテスト（適性検査）の専門家です。
+受験者から問題が送られてきたら、正確な解答と丁寧な解説を提供してください。
+
+【対応する問題タイプ】${typeHint}
+
+【回答の形式】
+1. まず「## 解答」として正解（選択肢記号または答え）を明示する
+2. 「## 解説」として解き方・考え方を段階的に説明する
+3. 「## ポイント」として類題で使えるコツや公式を簡潔にまとめる
+
+解答は必ず根拠とともに示し、受験者が理解できるよう丁寧に説明してください。
+計算問題は途中の計算過程も示してください。
+選択肢がある場合は、各選択肢が正しい/誤りの理由も説明してください。`;
+      const answer = await jobsAiChat(state, system, question);
+      sendJson(res, 200, { answer });
+      return;
+    }
+
     if (req.method === "GET") {
       const pathname = url.pathname === "/" ? "/index.html"
         : (url.pathname === "/jobs" || url.pathname === "/jobs/") ? "/jobs/index.html"
+        : (url.pathname === "/quiz" || url.pathname === "/quiz/") ? "/quiz/index.html"
         : url.pathname;
       const safePath = path.normalize(path.join(publicDir, pathname));
       if (!safePath.startsWith(publicDir)) {

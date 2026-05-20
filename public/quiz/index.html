@@ -1,0 +1,124 @@
+<!doctype html>
+<html lang="ja">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="theme-color" content="#0f172a" />
+    <title>Webテスト解答AI</title>
+    <link rel="stylesheet" href="/quiz/styles.css" />
+  </head>
+  <body>
+    <div class="layout">
+      <!-- 左パネル：問題入力 -->
+      <div class="panel panel-left" id="panel-left">
+        <div class="panel-header">
+          <div class="panel-title">
+            <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
+              <rect width="20" height="20" rx="6" fill="#4f46e5"/>
+              <path d="M5 7h10M5 10h7M5 13h9" stroke="white" stroke-width="1.5" stroke-linecap="round"/>
+            </svg>
+            <span>問題</span>
+          </div>
+          <div class="panel-actions">
+            <select id="question-type" class="select-sm" title="問題種別">
+              <option value="auto">種別: 自動判定</option>
+              <option value="verbal">言語（国語）</option>
+              <option value="nonverbal">非言語（数学）</option>
+              <option value="english">英語</option>
+              <option value="personality">性格検査</option>
+              <option value="other">その他</option>
+            </select>
+            <button class="btn-icon" id="clear-btn" title="クリア">
+              <svg viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M9 2a1 1 0 00-.894.553L7.382 4H4a1 1 0 000 2v10a2 2 0 002 2h8a2 2 0 002-2V6a1 1 0 100-2h-3.382l-.724-1.447A1 1 0 0011 2H9zM7 8a1 1 0 012 0v6a1 1 0 11-2 0V8zm5-1a1 1 0 00-1 1v6a1 1 0 102 0V8a1 1 0 00-1-1z" clip-rule="evenodd"/></svg>
+            </button>
+          </div>
+        </div>
+
+        <div class="input-area">
+          <textarea
+            id="question-input"
+            class="question-textarea"
+            placeholder="ここにWebテストの問題をコピー＆ペーストしてください。
+
+例：
+次の文章を読んで、設問に答えなさい。
+...
+
+【選択肢】
+A. ...
+B. ...
+C. ...
+D. ..."
+            spellcheck="false"
+          ></textarea>
+        </div>
+
+        <div class="input-footer">
+          <div class="char-count" id="char-count">0 文字</div>
+          <button class="btn-primary" id="submit-btn">
+            <svg viewBox="0 0 20 20" fill="currentColor" width="16" height="16"><path fill-rule="evenodd" d="M11.3 1.046A1 1 0 0112 2v5h4a1 1 0 01.82 1.573l-7 10A1 1 0 018 18v-5H4a1 1 0 01-.82-1.573l7-10a1 1 0 011.12-.38z" clip-rule="evenodd"/></svg>
+            解答を生成
+          </button>
+        </div>
+
+        <div class="history-section" id="history-section">
+          <div class="history-header">
+            <span>履歴</span>
+            <button class="btn-text" id="clear-history-btn">すべて削除</button>
+          </div>
+          <div class="history-list" id="history-list">
+            <div class="history-empty">まだ履歴がありません</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- リサイズハンドル -->
+      <div class="divider" id="divider" title="ドラッグでサイズ変更"></div>
+
+      <!-- 右パネル：解答表示 -->
+      <div class="panel panel-right" id="panel-right">
+        <div class="panel-header">
+          <div class="panel-title">
+            <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
+              <rect width="20" height="20" rx="6" fill="#059669"/>
+              <path d="M6 10l3 3 5-5" stroke="white" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
+            <span>解答・解説</span>
+          </div>
+          <div class="panel-actions">
+            <button class="btn-icon" id="copy-btn" title="コピー" style="display:none">
+              <svg viewBox="0 0 20 20" fill="currentColor"><path d="M8 3a1 1 0 011-1h2a1 1 0 110 2H9a1 1 0 01-1-1z"/><path d="M6 3a2 2 0 00-2 2v11a2 2 0 002 2h8a2 2 0 002-2V5a2 2 0 00-2-2 3 3 0 01-3 3H9a3 3 0 01-3-3z"/></svg>
+            </button>
+            <a href="/" class="btn-icon" title="メールAIに戻る">
+              <svg viewBox="0 0 20 20" fill="currentColor"><path d="M2.003 5.884L10 9.882l7.997-3.998A2 2 0 0016 4H4a2 2 0 00-1.997 1.884z"/><path d="M18 8.118l-8 4-8-4V14a2 2 0 002 2h12a2 2 0 002-2V8.118z"/></svg>
+            </a>
+          </div>
+        </div>
+
+        <div class="answer-area" id="answer-area">
+          <div class="answer-placeholder" id="answer-placeholder">
+            <svg width="48" height="48" viewBox="0 0 48 48" fill="none">
+              <circle cx="24" cy="24" r="20" fill="#f1f5f9"/>
+              <path d="M16 24l6 6 10-10" stroke="#94a3b8" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
+            <p>左パネルに問題を入力して<br>「解答を生成」を押してください</p>
+            <ul class="tip-list">
+              <li>問題文と選択肢をそのまま貼り付けてOK</li>
+              <li>計算問題・言語問題・英語など対応</li>
+              <li>解答理由・解説も表示します</li>
+            </ul>
+          </div>
+          <div class="answer-loading" id="answer-loading" style="display:none">
+            <div class="spinner"></div>
+            <span>AIが解答中...</span>
+          </div>
+          <div class="answer-content" id="answer-content" style="display:none"></div>
+        </div>
+      </div>
+    </div>
+
+    <div id="toast" class="toast" role="alert" aria-live="polite"></div>
+
+    <script src="/quiz/app.js"></script>
+  </body>
+</html>
