@@ -567,23 +567,20 @@ async function quizAiWithImage(state, systemPrompt, userText, imageBase64, mimeT
         result = response.ok ? (body.content?.[0]?.text?.trim() || "") : null;
       } else if (provider === "gemini" && configuredGemini(state)) {
         const config = geminiConfig(state);
-        const response = await fetch(
-          `https://generativelanguage.googleapis.com/v1beta/models/${config.model}:generateContent?key=${config.key}`,
-          {
-            method: "POST",
-            headers: { "content-type": "application/json" },
-            body: JSON.stringify({
-              systemInstruction: { parts: [{ text: systemPrompt }] },
-              contents: [{ role: "user", parts: [
-                { inline_data: { mime_type: mimeType, data: imageBase64 } },
-                { text: userText }
-              ]}],
-              generationConfig: { temperature: 0.3, maxOutputTokens: 4096 }
-            })
-          }
-        );
-        const body = await response.json();
-        result = response.ok ? (body.candidates?.[0]?.content?.parts?.[0]?.text?.trim() || "") : null;
+        const reqBody = {
+          systemInstruction: { parts: [{ text: systemPrompt }] },
+          contents: [{ role: "user", parts: [
+            { inline_data: { mime_type: mimeType, data: imageBase64 } },
+            { text: userText }
+          ]}],
+          generationConfig: { temperature: 0.3, maxOutputTokens: 4096 }
+        };
+        let { ok, status, body } = await callGeminiApi(config.key, config.model, reqBody);
+        if (!ok && isGeminiQuotaError(status, body) && config.fallbackModel !== config.model) {
+          console.log(`Gemini quota exceeded on ${config.model}, falling back to ${config.fallbackModel}`);
+          ({ ok, body } = await callGeminiApi(config.key, config.fallbackModel, reqBody));
+        }
+        result = ok ? (body.candidates?.[0]?.content?.parts?.[0]?.text?.trim() || "") : null;
       } else if (provider === "openai" && configuredOpenAI(state)) {
         const config = openAIConfig(state);
         const response = await fetch("https://api.openai.com/v1/chat/completions", {
