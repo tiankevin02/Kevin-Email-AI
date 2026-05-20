@@ -158,23 +158,73 @@ body {
   padding: 8px;
 }
 
-.image-clear-btn {
-  position: absolute;
-  top: 8px;
-  right: 8px;
-  width: 28px;
-  height: 28px;
-  background: rgba(15,23,42,0.8);
-  border: 1px solid var(--border-strong);
-  border-radius: 50%;
-  color: var(--ink-2);
-  cursor: pointer;
+/* Image thumbnails grid */
+.image-thumbs {
+  width: 100%;
+  height: 100%;
   display: flex;
-  align-items: center;
-  justify-content: center;
+  flex-direction: column;
+  padding: 10px;
+  gap: 8px;
+  overflow-y: auto;
+}
+
+.image-thumbs-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(110px, 1fr));
+  gap: 6px;
+  flex: 1;
+}
+
+.thumb-item {
+  position: relative;
+  aspect-ratio: 4/3;
+  border-radius: 6px;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  background: var(--surface-3);
+}
+
+.thumb-item img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.thumb-num {
+  position: absolute;
+  top: 4px;
+  left: 4px;
+  background: rgba(0,0,0,0.65);
+  color: white;
+  font-size: 10px;
+  font-weight: 700;
+  padding: 1px 5px;
+  border-radius: 3px;
+}
+
+.image-thumbs-actions {
+  display: flex;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+.btn-sm {
+  padding: 5px 10px !important;
+  font-size: 12px !important;
+}
+
+.btn-danger {
+  background: none;
+  border: 1px solid rgba(239,68,68,0.4);
+  border-radius: var(--r-sm);
+  color: #f87171;
+  font-size: 13px;
+  padding: 7px 14px;
+  cursor: pointer;
   transition: background 0.15s;
 }
-.image-clear-btn:hover { background: rgba(239,68,68,0.8); color: white; }
+.btn-danger:hover { background: rgba(239,68,68,0.15); }
 
 .image-hint-textarea {
   height: 52px;

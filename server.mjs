@@ -470,6 +470,57 @@ async function jobsAiChat(state, systemPrompt, userContent) {
   throw err;
 }
 
+async function quizAiWithImages(state, systemPrompt, userText, imgList) {
+  // imgList: [{base64, mime}]
+  for (const provider of aiProviderOrder(state)) {
+    try {
+      let result = null;
+      if (provider === "anthropic" && configuredAnthropic(state)) {
+        const config = anthropicConfig(state);
+        const contentParts = imgList.map(img => ({
+          type: "image", source: { type: "base64", media_type: img.mime, data: img.base64 }
+        }));
+        contentParts.push({ type: "text", text: userText });
+        const response = await fetch("https://api.anthropic.com/v1/messages", {
+          method: "POST",
+          headers: { "content-type": "application/json", "x-api-key": config.key, "anthropic-version": "2023-06-01" },
+          body: JSON.stringify({ model: config.model, max_tokens: 4096, system: systemPrompt, messages: [{ role: "user", content: contentParts }] })
+        });
+        const body = await response.json();
+        result = response.ok ? (body.content?.[0]?.text?.trim() || "") : null;
+      } else if (provider === "gemini" && configuredGemini(state)) {
+        const config = geminiConfig(state);
+        const parts = imgList.map(img => ({ inline_data: { mime_type: img.mime, data: img.base64 } }));
+        parts.push({ text: userText });
+        const response = await fetch(
+          `https://generativelanguage.googleapis.com/v1beta/models/${config.model}:generateContent?key=${config.key}`,
+          { method: "POST", headers: { "content-type": "application/json" },
+            body: JSON.stringify({ systemInstruction: { parts: [{ text: systemPrompt }] }, contents: [{ role: "user", parts }], generationConfig: { temperature: 0.3, maxOutputTokens: 4096 } }) }
+        );
+        const body = await response.json();
+        result = response.ok ? (body.candidates?.[0]?.content?.parts?.[0]?.text?.trim() || "") : null;
+      } else if (provider === "openai" && configuredOpenAI(state)) {
+        const config = openAIConfig(state);
+        const contentParts = imgList.map(img => ({
+          type: "image_url", image_url: { url: `data:${img.mime};base64,${img.base64}` }
+        }));
+        contentParts.push({ type: "text", text: userText });
+        const response = await fetch("https://api.openai.com/v1/chat/completions", {
+          method: "POST",
+          headers: { authorization: `Bearer ${config.key}`, "content-type": "application/json" },
+          body: JSON.stringify({ model: "gpt-4o", temperature: 0.3, messages: [{ role: "system", content: systemPrompt }, { role: "user", content: contentParts }] })
+        });
+        const body = await response.json();
+        result = response.ok ? (body.choices?.[0]?.message?.content?.trim() || "") : null;
+      }
+      if (result !== null) return result;
+    } catch {}
+  }
+  const err = new Error("画像対応AIが設定されていません。Anthropic / Gemini / OpenAI のAPIキーを設定してください。");
+  err.status = 400;
+  throw err;
+}
+
 async function quizAiWithImage(state, systemPrompt, userText, imageBase64, mimeType) {
   for (const provider of aiProviderOrder(state)) {
     try {
@@ -2039,8 +2090,9 @@ JSONのみを返してください。`;
     }
 
     if (req.method === "POST" && url.pathname === "/api/quiz/answer") {
-      const { question, type, imageBase64, imageMimeType, noExplanation } = await parseBody(req);
-      if (!question && !imageBase64) { sendJson(res, 400, { error: "問題文または画像を入力してください。" }); return; }
+      const { question, type, imageBase64, imageMimeType, images, noExplanation } = await parseBody(req);
+      const hasImage = imageBase64 || (Array.isArray(images) && images.length > 0);
+      if (!question && !hasImage) { sendJson(res, 400, { error: "問題文または画像を入力してください。" }); return; }
       if (!configuredAI(state)) {
         const err = new Error("AIサービスが設定されていません。設定からAPIキーを入力してください。");
         err.status = 400;
@@ -2073,10 +2125,13 @@ JSONのみを返してください。`;
 ${answerFormat}`;
 
       let answer;
-      if (imageBase64) {
-        const mimeType = imageMimeType || "image/png";
-        const userText = question || "画像の問題を読み取り、正解を示してください。";
-        answer = await quizAiWithImage(state, system, userText, imageBase64, mimeType);
+      if (hasImage) {
+        // 複数画像対応: imagesが配列ならそのまま、旧形式の単一imageBase64にも対応
+        const imgList = Array.isArray(images) && images.length
+          ? images.map(img => ({ base64: img.base64, mime: img.mime || "image/png" }))
+          : [{ base64: imageBase64, mime: imageMimeType || "image/png" }];
+        const userText = question || "画像の問題をすべて読み取り、各問の正解を示してください。";
+        answer = await quizAiWithImages(state, system, userText, imgList);
       } else {
         answer = await jobsAiChat(state, system, question);
       }

@@ -62,24 +62,32 @@ C. 選択肢3"
         <!-- 画像入力パネル -->
         <div class="input-area hidden" id="input-image">
           <div class="image-drop-zone" id="image-drop-zone">
+            <!-- 空のとき -->
             <div class="image-drop-inner" id="image-drop-inner">
               <svg width="40" height="40" viewBox="0 0 40 40" fill="none">
                 <circle cx="20" cy="20" r="18" fill="rgba(79,70,229,0.1)" stroke="rgba(79,70,229,0.3)" stroke-width="1.5"/>
                 <path d="M20 12v10M15 17l5-5 5 5" stroke="#818cf8" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
                 <path d="M12 26h16" stroke="#818cf8" stroke-width="1.5" stroke-linecap="round"/>
               </svg>
-              <p class="drop-title">スクリーンショットを貼り付け</p>
-              <p class="drop-hint">スクリーンショット後に Ctrl+V、またはファイルを選択</p>
-              <label class="btn-outline" id="file-label">
-                📁 ファイルを選択
-                <input type="file" id="file-input" accept="image/*" style="display:none" />
+              <p class="drop-title">画像を追加</p>
+              <p class="drop-hint">Ctrl+V・ドラッグ&ドロップ・ファイル選択</p>
+              <label class="btn-outline">
+                📁 ファイルを選択（複数可）
+                <input type="file" id="file-input" accept="image/*" multiple style="display:none" />
               </label>
               <button class="btn-outline" id="paste-btn" style="font-size:12px;padding:5px 10px">Ctrl+V 貼り付け</button>
             </div>
-            <img id="image-preview" class="image-preview hidden" alt="プレビュー" />
-            <button class="image-clear-btn hidden" id="image-clear-btn" title="画像を削除">
-              <svg viewBox="0 0 20 20" fill="currentColor" width="14" height="14"><path fill-rule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clip-rule="evenodd"/></svg>
-            </button>
+            <!-- 画像サムネイル一覧 -->
+            <div class="image-thumbs hidden" id="image-thumbs">
+              <div class="image-thumbs-grid" id="image-thumbs-grid"></div>
+              <div class="image-thumbs-actions">
+                <label class="btn-outline btn-sm">
+                  ＋ 追加
+                  <input type="file" id="file-input-add" accept="image/*" multiple style="display:none" />
+                </label>
+                <button class="btn-danger btn-sm" id="image-clear-btn">✕ すべて削除</button>
+              </div>
+            </div>
           </div>
           <textarea
             id="image-hint-input"
