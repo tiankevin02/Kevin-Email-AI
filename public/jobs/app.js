@@ -26,6 +26,7 @@ const EVENT_COLORS = {
 const INTERVIEW_TYPES = ["一次面接", "二次面接", "三次面接", "最終面接", "グループ面接", "OB/OG訪問", "カジュアル面談"];
 const INTERVIEW_FORMATS = ["オンライン", "対面", "電話"];
 const INTERVIEW_RESULTS = ["合格", "不合格", "結果待ち"];
+const SELECTION_TYPES = ["インターン", "本選考"];
 
 /* ===== State ===== */
 let state = { companies: [], schedules: [] };
@@ -40,7 +41,9 @@ function jstNow() {
 let calYear = jstNow().getUTCFullYear();
 let calMonth = jstNow().getUTCMonth();
 let calSelectedDate = null;
+let companyBackView = "companies";
 let filterStatus = "all";
+let filterSelectionType = "all";
 let searchQuery = "";
 let saveTimer = null;
 
@@ -212,6 +215,9 @@ function handleRoute() {
   if (!viewEl) return;
   viewEl.classList.add("active");
 
+  if (view === "company") {
+    companyBackView = currentView === "calendar" ? "calendar" : "companies";
+  }
   currentView = view;
 
   if (view === "dashboard") renderDashboard();
@@ -369,6 +375,12 @@ function renderCompanies() {
       </div>
     </div>
 
+    <div class="filter-chips" style="margin-bottom:8px">
+      <button class="filter-chip ${filterSelectionType === "all" ? "active" : ""}" onclick="setSelectionTypeFilter('all')">全て</button>
+      <button class="filter-chip ${filterSelectionType === "インターン" ? "active" : ""}" onclick="setSelectionTypeFilter('インターン')">インターン</button>
+      <button class="filter-chip ${filterSelectionType === "本選考" ? "active" : ""}" onclick="setSelectionTypeFilter('本選考')">本選考</button>
+    </div>
+
     <div class="filter-chips" id="status-filters">
       <button class="filter-chip ${filterStatus === "all" ? "active" : ""}" onclick="setStatusFilter('all')">すべて</button>
       ${STATUSES.map(
@@ -389,6 +401,7 @@ function renderCompaniesList() {
 
   let filtered = state.companies;
   if (filterStatus !== "all") filtered = filtered.filter((c) => c.status === filterStatus);
+  if (filterSelectionType !== "all") filtered = filtered.filter((c) => (c.selectionType || "インターン") === filterSelectionType);
   if (searchQuery) {
     const q = searchQuery.toLowerCase();
     filtered = filtered.filter((c) => c.name.toLowerCase().includes(q) || (c.industry || "").toLowerCase().includes(q));
@@ -417,12 +430,16 @@ function companyCardHtml(c) {
   const hasWebtest = !!(c.webTest?.notes || c.webTest?.aiInfo);
   const hasInterview = (c.interviews || []).length > 0;
   const date = c.updatedAt || c.createdAt;
+  const selType = c.selectionType || "インターン";
 
   return `
     <div class="company-card" onclick="navigate('#company/${c.id}')">
       <div class="company-card-header">
         <div>
-          <div class="company-name">${escHtml(c.name)}</div>
+          <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">
+            <div class="company-name">${escHtml(c.name)}</div>
+            <span class="selection-type-badge ${selType === '本選考' ? 'badge-honsen' : 'badge-intern'}">${selType}</span>
+          </div>
           <div class="company-industry">${escHtml(c.industry || "業界未設定")}</div>
         </div>
         ${statusChip(c.status)}
@@ -445,6 +462,11 @@ function onSearchChange(val) {
   renderCompaniesList();
 }
 
+function setSelectionTypeFilter(val) {
+  filterSelectionType = val;
+  renderCompanies();
+}
+
 function setStatusFilter(val) {
   filterStatus = val;
   renderCompanies();
@@ -453,8 +475,17 @@ function setStatusFilter(val) {
 /* ===== Add Company Modal ===== */
 function openAddCompanyModal(prefill = {}) {
   const isEdit = !!prefill.id;
+  const selectionType = prefill.selectionType || "インターン";
   const body = `
     <div class="form-group">
+      <label class="form-label">選考タイプ <span style="color:var(--red)">*</span></label>
+      <div style="display:flex;gap:8px">
+        <button type="button" class="type-toggle-btn intern ${selectionType === 'インターン' ? 'active' : ''}" onclick="toggleSelectionType('インターン',this)" id="type-btn-intern">インターン</button>
+        <button type="button" class="type-toggle-btn honsen ${selectionType === '本選考' ? 'active' : ''}" onclick="toggleSelectionType('本選考',this)" id="type-btn-honsen">本選考</button>
+      </div>
+      <input type="hidden" id="m-co-selectionType" value="${selectionType}" />
+    </div>
+    <div class="form-group mt-3">
       <label class="form-label">企業名 <span style="color:var(--red)">*</span></label>
       <input class="form-input" id="m-name" placeholder="例: 株式会社〇〇" value="${escHtml(prefill.name || "")}" />
     </div>
@@ -491,9 +522,16 @@ function openAddCompanyModal(prefill = {}) {
   document.getElementById("m-name")?.focus();
 }
 
+function toggleSelectionType(type, btn) {
+  document.getElementById("m-co-selectionType").value = type;
+  document.querySelectorAll(".type-toggle-btn").forEach(b => b.classList.remove("active"));
+  btn.classList.add("active");
+}
+
 function saveCompany(editId) {
   const name = document.getElementById("m-name")?.value.trim();
   if (!name) { toast("企業名を入力してください"); return; }
+  const selType = document.getElementById("m-co-selectionType")?.value || "インターン";
 
   if (editId) {
     const c = getCompany(editId);
@@ -503,6 +541,7 @@ function saveCompany(editId) {
     c.status = document.getElementById("m-status")?.value || "エントリー";
     c.url = document.getElementById("m-url")?.value.trim() || "";
     c.notes = document.getElementById("m-notes")?.value.trim() || "";
+    c.selectionType = selType;
     c.updatedAt = now();
     toast("更新しました");
   } else {
@@ -513,6 +552,7 @@ function saveCompany(editId) {
       status: document.getElementById("m-status")?.value || "エントリー",
       url: document.getElementById("m-url")?.value.trim() || "",
       notes: document.getElementById("m-notes")?.value.trim() || "",
+      selectionType: selType,
       es: [],
       webTest: { notes: "", aiInfo: null },
       interviews: [],
@@ -548,15 +588,19 @@ function renderCompany() {
     return;
   }
 
+  const selType = c.selectionType || "インターン";
   el.innerHTML = `
     <div class="detail-header">
       <div class="detail-header-top">
         <div>
-          <button class="btn btn-ghost btn-sm" onclick="navigate('#companies')" style="margin-bottom:8px;padding-left:4px">
+          <button class="btn btn-ghost btn-sm" onclick="navigate('#${companyBackView}')" style="margin-bottom:8px;padding-left:4px">
             <svg viewBox="0 0 20 20" fill="currentColor" style="width:14px;height:14px"><path fill-rule="evenodd" d="M9.707 16.707a1 1 0 01-1.414 0l-6-6a1 1 0 010-1.414l6-6a1 1 0 011.414 1.414L5.414 9H17a1 1 0 110 2H5.414l4.293 4.293a1 1 0 010 1.414z" clip-rule="evenodd"/></svg>
-            企業一覧
+            ${companyBackView === "calendar" ? "カレンダー" : "企業一覧"}
           </button>
-          <div class="detail-company-name">${escHtml(c.name)}</div>
+          <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+            <div class="detail-company-name">${escHtml(c.name)}</div>
+            <span class="selection-type-badge ${selType === '本選考' ? 'badge-honsen' : 'badge-intern'}">${selType}</span>
+          </div>
           <div class="detail-company-sub">${escHtml(c.industry || "")}${c.url ? ` · <a href="${escHtml(c.url)}" target="_blank" rel="noreferrer" style="color:var(--accent)">${escHtml(c.url)}</a>` : ""}</div>
         </div>
         <div class="detail-actions">
@@ -577,6 +621,7 @@ function renderCompany() {
       <button class="tab-btn ${currentCompanyTab === "es" ? "active" : ""}" onclick="switchCompanyTab('es')">ES <span style="font-size:11px;opacity:.6">(${(c.es || []).length})</span></button>
       <button class="tab-btn ${currentCompanyTab === "webtest" ? "active" : ""}" onclick="switchCompanyTab('webtest')">WEBテスト</button>
       <button class="tab-btn ${currentCompanyTab === "interview" ? "active" : ""}" onclick="switchCompanyTab('interview')">面接 <span style="font-size:11px;opacity:.6">(${(c.interviews || []).length})</span></button>
+      <button class="tab-btn ${currentCompanyTab === "tools" ? "active" : ""}" onclick="switchCompanyTab('tools')">AIツール</button>
     </div>
 
     <div id="tab-overview" class="tab-panel ${currentCompanyTab === "overview" ? "active" : ""}">
@@ -591,13 +636,16 @@ function renderCompany() {
     <div id="tab-interview" class="tab-panel ${currentCompanyTab === "interview" ? "active" : ""}">
       ${renderInterviewTab(c)}
     </div>
+    <div id="tab-tools" class="tab-panel ${currentCompanyTab === "tools" ? "active" : ""}">
+      ${renderToolsTab(c)}
+    </div>
   `;
 }
 
 function switchCompanyTab(tab) {
   currentCompanyTab = tab;
   document.querySelectorAll(".tab-btn").forEach((b, i) => {
-    const tabs = ["overview", "es", "webtest", "interview"];
+    const tabs = ["overview", "es", "webtest", "interview", "tools"];
     b.classList.toggle("active", tabs[i] === tab);
   });
   document.querySelectorAll(".tab-panel").forEach((p) => p.classList.remove("active"));
@@ -695,8 +743,34 @@ function updateCompanyField(id, field, value) {
 
 /* ===== ES Tab ===== */
 function renderEsTab(c) {
+  const meta = c.esMeta || {};
   return `
     <div style="max-width:720px">
+      <div class="card mb-4">
+        <div class="card-header">
+          <span class="card-title">ES対策情報</span>
+          <button class="btn btn-ai btn-sm" onclick="runEsStrategy('${c.id}')">
+            <svg viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M11.3 1.046A1 1 0 0112 2v5h4a1 1 0 01.82 1.573l-7 10A1 1 0 018 18v-5H4a1 1 0 01-.82-1.573l7-10a1 1 0 011.12-.38z" clip-rule="evenodd"/></svg>
+            AIに調べてもらう
+          </button>
+        </div>
+        <div class="card-body">
+          <div id="es-strategy-${c.id}">
+            ${meta.aiStrategy
+              ? `<div class="ai-result md-content">${markdownToHtml(meta.aiStrategy)}</div>
+                 <div style="font-size:11px;color:var(--text-4);margin-top:8px">取得日: ${fmtDatetime(meta.aiStrategyUpdatedAt || "")}</div>`
+              : `<p class="text-muted" style="text-align:center;padding:16px 0">「AIに調べてもらう」を押すと、${escHtml(c.name)}のES対策情報を調べます</p>`}
+          </div>
+        </div>
+      </div>
+
+      <div class="card mb-4">
+        <div class="card-header"><span class="card-title">自分のメモ</span></div>
+        <div class="card-body">
+          <textarea class="form-textarea" rows="4" onchange="updateEsMeta('${c.id}','notes',this.value)" placeholder="ES対策のメモ、準備内容、気づきなど">${escHtml(meta.notes || "")}</textarea>
+        </div>
+      </div>
+
       <div style="display:flex;justify-content:flex-end;margin-bottom:14px">
         <button class="btn btn-primary" onclick="openAddEsModal('${c.id}')">
           <svg viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M10 5a1 1 0 011 1v3h3a1 1 0 110 2h-3v3a1 1 0 11-2 0v-3H6a1 1 0 110-2h3V6a1 1 0 011-1z" clip-rule="evenodd"/></svg>
@@ -720,10 +794,14 @@ function esEntryHtml(c, entry) {
     <div class="es-entry" id="es-${entry.id}">
       <div class="es-entry-header">
         <div class="es-question-text">${escHtml(entry.question)}</div>
-        <div style="display:flex;gap:6px;flex-shrink:0">
+        <div style="display:flex;gap:4px;flex-shrink:0;flex-wrap:wrap;justify-content:flex-end">
           <button class="btn btn-ai btn-sm" onclick="runEsReview('${c.id}','${entry.id}')">
             <svg viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M11.3 1.046A1 1 0 0112 2v5h4a1 1 0 01.82 1.573l-7 10A1 1 0 018 18v-5H4a1 1 0 01-.82-1.573l7-10a1 1 0 011.12-.38z" clip-rule="evenodd"/></svg>
             AI添削
+          </button>
+          <button class="btn btn-secondary btn-sm" onclick="runEsAdvice('${c.id}','${entry.id}')">
+            <svg viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-8-3a1 1 0 00-.867.5 1 1 0 11-1.731-1A3 3 0 0113 8a3.001 3.001 0 01-2 2.83V11a1 1 0 11-2 0v-1a1 1 0 011-1 1 1 0 100-2zm0 8a1 1 0 100-2 1 1 0 000 2z" clip-rule="evenodd"/></svg>
+            AIアドバイス
           </button>
           <button class="btn btn-ghost btn-sm" onclick="openEditEsModal('${c.id}','${entry.id}')">編集</button>
           <button class="btn btn-ghost btn-sm" onclick="deleteEs('${c.id}','${entry.id}')">
@@ -743,6 +821,15 @@ function esEntryHtml(c, entry) {
                   AI添削結果
                 </div>
                 <div class="md-content">${markdownToHtml(entry.aiReview)}</div>
+              </div>`
+            : ""}
+          ${entry.aiAdvice
+            ? `<div class="es-review-panel" style="border-color:#6366f120;background:var(--surface-2)">
+                <div class="es-review-label" style="color:#6366f1">
+                  <svg viewBox="0 0 20 20" fill="currentColor" style="width:12px;height:12px"><path fill-rule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-8-3a1 1 0 00-.867.5 1 1 0 11-1.731-1A3 3 0 0113 8a3.001 3.001 0 01-2 2.83V11a1 1 0 11-2 0v-1a1 1 0 011-1 1 1 0 100-2zm0 8a1 1 0 100-2 1 1 0 000 2z" clip-rule="evenodd"/></svg>
+                  AIアドバイス
+                </div>
+                <div class="md-content">${markdownToHtml(entry.aiAdvice)}</div>
               </div>`
             : ""}
         </div>
@@ -898,6 +985,69 @@ async function runEsReview(companyId, esId) {
   }
 }
 
+async function runEsStrategy(companyId) {
+  const c = getCompany(companyId);
+  if (!c) return;
+  const el = document.getElementById(`es-strategy-${companyId}`);
+  if (el) el.innerHTML = `<div class="ai-loading"><div class="spinner"></div>AIが調査中...</div>`;
+  try {
+    const res = await fetchJson("/api/jobs/ai/es-strategy", {
+      method: "POST",
+      body: JSON.stringify({ companyName: c.name, esEntries: (c.es || []).map(e => ({ question: e.question })) }),
+    });
+    c.esMeta = c.esMeta || {};
+    c.esMeta.aiStrategy = res.strategy;
+    c.esMeta.aiStrategyUpdatedAt = now();
+    c.updatedAt = now();
+    scheduleSave();
+    if (el) el.innerHTML = `<div class="ai-result md-content">${markdownToHtml(res.strategy)}</div><div style="font-size:11px;color:var(--text-4);margin-top:8px">取得日: ${fmtDatetime(c.esMeta.aiStrategyUpdatedAt)}</div>`;
+    toast("ES対策情報を取得しました");
+  } catch (e) {
+    if (el) el.innerHTML = `<div style="color:var(--red);font-size:13px;padding:8px 0">${escHtml(e.message)}</div>`;
+    toast(e.message, 5000);
+  }
+}
+
+async function runEsAdvice(companyId, esId) {
+  const c = getCompany(companyId);
+  const entry = (c?.es || []).find(e => e.id === esId);
+  if (!entry) return;
+  if (!entry.question) { toast("設問を入力してください"); return; }
+  const reviewEl = document.getElementById(`es-review-${esId}`);
+  if (reviewEl) reviewEl.innerHTML = `<div class="ai-loading"><div class="spinner"></div>AIがアドバイス作成中...</div>`;
+  try {
+    const res = await fetchJson("/api/jobs/ai/es-advice", {
+      method: "POST",
+      body: JSON.stringify({ companyName: c.name, question: entry.question }),
+    });
+    entry.aiAdvice = res.advice;
+    entry.updatedAt = now();
+    c.updatedAt = now();
+    scheduleSave();
+    if (reviewEl) {
+      reviewEl.innerHTML = `
+        ${entry.aiReview ? `<div class="es-review-panel"><div class="es-review-label"><svg viewBox="0 0 20 20" fill="currentColor" style="width:12px;height:12px"><path fill-rule="evenodd" d="M11.3 1.046A1 1 0 0112 2v5h4a1 1 0 01.82 1.573l-7 10A1 1 0 018 18v-5H4a1 1 0 01-.82-1.573l7-10a1 1 0 011.12-.38z" clip-rule="evenodd"/></svg>AI添削結果</div><div class="md-content">${markdownToHtml(entry.aiReview)}</div></div>` : ""}
+        <div class="es-review-panel" style="border-color:#6366f120;background:var(--surface-2)">
+          <div class="es-review-label" style="color:#6366f1"><svg viewBox="0 0 20 20" fill="currentColor" style="width:12px;height:12px"><path fill-rule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-8-3a1 1 0 00-.867.5 1 1 0 11-1.731-1A3 3 0 0113 8a3.001 3.001 0 01-2 2.83V11a1 1 0 11-2 0v-1a1 1 0 011-1 1 1 0 100-2zm0 8a1 1 0 100-2 1 1 0 000 2z" clip-rule="evenodd"/></svg>AIアドバイス</div>
+          <div class="md-content">${markdownToHtml(res.advice)}</div>
+        </div>`;
+    }
+    toast("アドバイスを取得しました");
+  } catch (e) {
+    if (reviewEl) reviewEl.innerHTML = `<div style="color:var(--red);font-size:13px;padding:8px 0">${escHtml(e.message)}</div>`;
+    toast(e.message, 5000);
+  }
+}
+
+function updateEsMeta(companyId, field, value) {
+  const c = getCompany(companyId);
+  if (!c) return;
+  c.esMeta = c.esMeta || {};
+  c.esMeta[field] = value;
+  c.updatedAt = now();
+  scheduleSave();
+}
+
 /* ===== WebTest Tab ===== */
 function renderWebtestTab(c) {
   const wt = c.webTest || {};
@@ -977,8 +1127,34 @@ async function runWebtestInfo(companyId) {
 /* ===== Interview Tab ===== */
 function renderInterviewTab(c) {
   const interviews = c.interviews || [];
+  const meta = c.ivMeta || {};
   return `
     <div style="max-width:720px">
+      <div class="card mb-4">
+        <div class="card-header">
+          <span class="card-title">面接対策情報</span>
+          <button class="btn btn-ai btn-sm" onclick="runIvStrategy('${c.id}')">
+            <svg viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M11.3 1.046A1 1 0 0112 2v5h4a1 1 0 01.82 1.573l-7 10A1 1 0 018 18v-5H4a1 1 0 01-.82-1.573l7-10a1 1 0 011.12-.38z" clip-rule="evenodd"/></svg>
+            AIに調べてもらう
+          </button>
+        </div>
+        <div class="card-body">
+          <div id="iv-strategy-${c.id}">
+            ${meta.aiStrategy
+              ? `<div class="ai-result md-content">${markdownToHtml(meta.aiStrategy)}</div>
+                 <div style="font-size:11px;color:var(--text-4);margin-top:8px">取得日: ${fmtDatetime(meta.aiStrategyUpdatedAt || "")}</div>`
+              : `<p class="text-muted" style="text-align:center;padding:16px 0">「AIに調べてもらう」を押すと、${escHtml(c.name)}の面接対策情報を調べます</p>`}
+          </div>
+        </div>
+      </div>
+
+      <div class="card mb-4">
+        <div class="card-header"><span class="card-title">自分のメモ</span></div>
+        <div class="card-body">
+          <textarea class="form-textarea" rows="4" onchange="updateIvMeta('${c.id}','notes',this.value)" placeholder="面接対策のメモ、準備内容、気づきなど">${escHtml(meta.notes || "")}</textarea>
+        </div>
+      </div>
+
       <div style="display:flex;justify-content:flex-end;margin-bottom:14px">
         <button class="btn btn-primary" onclick="openAddInterviewModal('${c.id}')">
           <svg viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M10 5a1 1 0 011 1v3h3a1 1 0 110 2h-3v3a1 1 0 11-2 0v-3H6a1 1 0 110-2h3V6a1 1 0 011-1z" clip-rule="evenodd"/></svg>
@@ -1074,6 +1250,19 @@ function interviewCardHtml(c, iv) {
                   <div class="md-content">${markdownToHtml(iv.aiExperienceFeedback)}</div>
                 </div>`
               : ""}
+          </div>
+        </div>
+
+        <div>
+          <div class="interview-section-title" style="color:var(--accent)">
+            <svg viewBox="0 0 20 20" fill="currentColor" style="width:13px;height:13px"><path d="M9 2a1 1 0 000 2h2a1 1 0 100-2H9z"/><path fill-rule="evenodd" d="M4 5a2 2 0 012-2 3 3 0 003 3h2a3 3 0 003-3 2 2 0 012 2v11a2 2 0 01-2 2H6a2 2 0 01-2-2V5zm3 4a1 1 0 000 2h.01a1 1 0 100-2H7zm3 0a1 1 0 000 2h3a1 1 0 100-2h-3zm-3 4a1 1 0 100 2h.01a1 1 0 100-2H7zm3 0a1 1 0 100 2h3a1 1 0 100-2h-3z" clip-rule="evenodd"/></svg>
+            面接Q&A練習
+          </div>
+          <div style="margin-bottom:10px;display:flex;justify-content:flex-end">
+            <button class="btn btn-secondary btn-sm" onclick="openAddIvQaModal('${c.id}','${iv.id}')">+ Q&Aを追加</button>
+          </div>
+          <div id="iv-qa-list-${iv.id}">
+            ${renderIvQaList(c, iv)}
           </div>
         </div>
 
@@ -1297,6 +1486,497 @@ async function runInterviewFeedback(companyId, ivId) {
     if (el) el.innerHTML = `<div style="color:var(--red);font-size:13px;padding:8px 0;margin-top:8px">${escHtml(e.message)}</div>`;
     toast(e.message, 5000);
   }
+}
+
+/* ===== Interview Q&A ===== */
+function renderIvQaList(c, iv) {
+  const qaList = iv.qa || [];
+  if (!qaList.length) return `<p class="text-muted" style="font-size:12.5px;text-align:center;padding:8px 0">Q&Aがありません。「Q&Aを追加」で面接練習の設問を登録しましょう</p>`;
+  return qaList.map(qa => ivQaEntryHtml(c, iv, qa)).join("");
+}
+
+function ivQaEntryHtml(c, iv, qa) {
+  const charCount = (qa.answer || "").length;
+  return `
+    <div class="es-entry" id="ivqa-${qa.id}" style="margin-bottom:12px">
+      <div class="es-entry-header">
+        <div class="es-question-text" style="font-size:13px">${escHtml(qa.question)}</div>
+        <div style="display:flex;gap:4px;flex-shrink:0;flex-wrap:wrap;justify-content:flex-end">
+          <button class="btn btn-ai btn-sm" onclick="runIvQaReview('${c.id}','${iv.id}','${qa.id}')">
+            <svg viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M11.3 1.046A1 1 0 0112 2v5h4a1 1 0 01.82 1.573l-7 10A1 1 0 018 18v-5H4a1 1 0 01-.82-1.573l7-10a1 1 0 011.12-.38z" clip-rule="evenodd"/></svg>
+            AI添削
+          </button>
+          <button class="btn btn-secondary btn-sm" onclick="runIvQaAdvice('${c.id}','${iv.id}','${qa.id}')">
+            <svg viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-8-3a1 1 0 00-.867.5 1 1 0 11-1.731-1A3 3 0 0113 8a3.001 3.001 0 01-2 2.83V11a1 1 0 11-2 0v-1a1 1 0 011-1 1 1 0 100-2zm0 8a1 1 0 100-2 1 1 0 000 2z" clip-rule="evenodd"/></svg>
+            AIアドバイス
+          </button>
+          <button class="btn btn-ghost btn-sm" onclick="deleteIvQa('${c.id}','${iv.id}','${qa.id}')">
+            <svg viewBox="0 0 20 20" fill="currentColor" style="width:14px;height:14px"><path fill-rule="evenodd" d="M9 2a1 1 0 00-.894.553L7.382 4H4a1 1 0 000 2v10a2 2 0 002 2h8a2 2 0 002-2V6a1 1 0 100-2h-3.382l-.724-1.447A1 1 0 0011 2H9zM7 8a1 1 0 012 0v6a1 1 0 11-2 0V8zm5-1a1 1 0 00-1 1v6a1 1 0 102 0V8a1 1 0 00-1-1z" clip-rule="evenodd"/></svg>
+          </button>
+        </div>
+      </div>
+      <div class="es-entry-body">
+        <textarea class="form-textarea" rows="4" onchange="updateIvQaField('${c.id}','${iv.id}','${qa.id}','answer',this.value)" placeholder="回答を入力してください">${escHtml(qa.answer || "")}</textarea>
+        <div style="font-size:11px;color:var(--text-4);text-align:right">${charCount}字</div>
+        <div id="ivqa-review-${qa.id}">
+          ${qa.aiReview ? `<div class="es-review-panel"><div class="es-review-label"><svg viewBox="0 0 20 20" fill="currentColor" style="width:12px;height:12px"><path fill-rule="evenodd" d="M11.3 1.046A1 1 0 0112 2v5h4a1 1 0 01.82 1.573l-7 10A1 1 0 018 18v-5H4a1 1 0 01-.82-1.573l7-10a1 1 0 011.12-.38z" clip-rule="evenodd"/></svg>AI添削結果</div><div class="md-content">${markdownToHtml(qa.aiReview)}</div></div>` : ""}
+          ${qa.aiAdvice ? `<div class="es-review-panel" style="border-color:#6366f120;background:var(--surface-2)"><div class="es-review-label" style="color:#6366f1"><svg viewBox="0 0 20 20" fill="currentColor" style="width:12px;height:12px"><path fill-rule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-8-3a1 1 0 00-.867.5 1 1 0 11-1.731-1A3 3 0 0113 8a3.001 3.001 0 01-2 2.83V11a1 1 0 11-2 0v-1a1 1 0 011-1 1 1 0 100-2zm0 8a1 1 0 100-2 1 1 0 000 2z" clip-rule="evenodd"/></svg>AIアドバイス</div><div class="md-content">${markdownToHtml(qa.aiAdvice)}</div></div>` : ""}
+        </div>
+      </div>
+    </div>
+  `;
+}
+
+async function runIvStrategy(companyId) {
+  const c = getCompany(companyId);
+  if (!c) return;
+  const el = document.getElementById(`iv-strategy-${companyId}`);
+  if (el) el.innerHTML = `<div class="ai-loading"><div class="spinner"></div>AIが調査中...</div>`;
+  try {
+    const res = await fetchJson("/api/jobs/ai/iv-strategy", {
+      method: "POST",
+      body: JSON.stringify({ companyName: c.name }),
+    });
+    c.ivMeta = c.ivMeta || {};
+    c.ivMeta.aiStrategy = res.strategy;
+    c.ivMeta.aiStrategyUpdatedAt = now();
+    c.updatedAt = now();
+    scheduleSave();
+    if (el) el.innerHTML = `<div class="ai-result md-content">${markdownToHtml(res.strategy)}</div><div style="font-size:11px;color:var(--text-4);margin-top:8px">取得日: ${fmtDatetime(c.ivMeta.aiStrategyUpdatedAt)}</div>`;
+    toast("面接対策情報を取得しました");
+  } catch (e) {
+    if (el) el.innerHTML = `<div style="color:var(--red);font-size:13px;padding:8px 0">${escHtml(e.message)}</div>`;
+    toast(e.message, 5000);
+  }
+}
+
+function updateIvMeta(companyId, field, value) {
+  const c = getCompany(companyId);
+  if (!c) return;
+  c.ivMeta = c.ivMeta || {};
+  c.ivMeta[field] = value;
+  c.updatedAt = now();
+  scheduleSave();
+}
+
+function openAddIvQaModal(companyId, ivId) {
+  const body = `
+    <div class="form-group">
+      <label class="form-label">設問 <span style="color:var(--red)">*</span></label>
+      <textarea class="form-textarea" id="m-ivqa-q" rows="2" placeholder="例: 学生時代に最も力を入れたことは何ですか？"></textarea>
+    </div>
+    <div class="form-group mt-3">
+      <label class="form-label">回答（任意）</label>
+      <textarea class="form-textarea" id="m-ivqa-a" rows="5" placeholder="回答を入力してください（後から入力もOK）"></textarea>
+    </div>
+  `;
+  openModal("Q&Aを追加", body, `
+    <button class="btn btn-secondary" onclick="closeModal()">キャンセル</button>
+    <button class="btn btn-primary" onclick="saveIvQa('${companyId}','${ivId}',null)">追加</button>
+  `);
+  document.getElementById("m-ivqa-q")?.focus();
+}
+
+function saveIvQa(companyId, ivId, qaId) {
+  const c = getCompany(companyId);
+  const iv = (c?.interviews || []).find(x => x.id === ivId);
+  if (!c || !iv) return;
+  iv.qa = iv.qa || [];
+  const q = document.getElementById("m-ivqa-q")?.value.trim();
+  const a = document.getElementById("m-ivqa-a")?.value.trim() || "";
+  if (!q) { toast("設問を入力してください"); return; }
+  if (qaId) {
+    const qa = iv.qa.find(x => x.id === qaId);
+    if (qa) { qa.question = q; qa.answer = a; qa.updatedAt = now(); }
+  } else {
+    iv.qa.push({ id: uid(), question: q, answer: a, aiReview: null, aiAdvice: null, createdAt: now(), updatedAt: now() });
+  }
+  iv.updatedAt = now();
+  c.updatedAt = now();
+  scheduleSave();
+  closeModal();
+  const listEl = document.getElementById(`iv-qa-list-${ivId}`);
+  if (listEl) listEl.innerHTML = renderIvQaList(c, iv);
+  toast(qaId ? "更新しました" : "追加しました");
+}
+
+function deleteIvQa(companyId, ivId, qaId) {
+  if (!confirm("このQ&Aを削除しますか？")) return;
+  const c = getCompany(companyId);
+  const iv = (c?.interviews || []).find(x => x.id === ivId);
+  if (!iv) return;
+  iv.qa = (iv.qa || []).filter(x => x.id !== qaId);
+  iv.updatedAt = now();
+  c.updatedAt = now();
+  scheduleSave();
+  const listEl = document.getElementById(`iv-qa-list-${ivId}`);
+  if (listEl) listEl.innerHTML = renderIvQaList(c, iv);
+  toast("削除しました");
+}
+
+function updateIvQaField(companyId, ivId, qaId, field, value) {
+  const c = getCompany(companyId);
+  const iv = (c?.interviews || []).find(x => x.id === ivId);
+  const qa = (iv?.qa || []).find(x => x.id === qaId);
+  if (!qa) return;
+  qa[field] = value;
+  qa.updatedAt = now();
+  iv.updatedAt = now();
+  c.updatedAt = now();
+  scheduleSave();
+}
+
+async function runIvQaReview(companyId, ivId, qaId) {
+  const c = getCompany(companyId);
+  const iv = (c?.interviews || []).find(x => x.id === ivId);
+  const qa = (iv?.qa || []).find(x => x.id === qaId);
+  if (!qa) return;
+  if (!qa.question || !qa.answer) { toast("設問と回答を入力してください"); return; }
+  const el = document.getElementById(`ivqa-review-${qaId}`);
+  if (el) el.innerHTML = `<div class="ai-loading"><div class="spinner"></div>AIが添削中...</div>`;
+  try {
+    const res = await fetchJson("/api/jobs/ai/iv-review", {
+      method: "POST",
+      body: JSON.stringify({ companyName: c.name, interviewType: iv.type, question: qa.question, answer: qa.answer }),
+    });
+    qa.aiReview = res.review;
+    qa.updatedAt = now();
+    c.updatedAt = now();
+    scheduleSave();
+    if (el) el.innerHTML = `<div class="es-review-panel"><div class="es-review-label"><svg viewBox="0 0 20 20" fill="currentColor" style="width:12px;height:12px"><path fill-rule="evenodd" d="M11.3 1.046A1 1 0 0112 2v5h4a1 1 0 01.82 1.573l-7 10A1 1 0 018 18v-5H4a1 1 0 01-.82-1.573l7-10a1 1 0 011.12-.38z" clip-rule="evenodd"/></svg>AI添削結果</div><div class="md-content">${markdownToHtml(res.review)}</div></div>`;
+    toast("添削が完了しました");
+  } catch (e) {
+    if (el) el.innerHTML = `<div style="color:var(--red);font-size:13px;padding:8px 0">${escHtml(e.message)}</div>`;
+    toast(e.message, 5000);
+  }
+}
+
+async function runIvQaAdvice(companyId, ivId, qaId) {
+  const c = getCompany(companyId);
+  const iv = (c?.interviews || []).find(x => x.id === ivId);
+  const qa = (iv?.qa || []).find(x => x.id === qaId);
+  if (!qa || !qa.question) { toast("設問を入力してください"); return; }
+  const el = document.getElementById(`ivqa-review-${qaId}`);
+  if (el) el.innerHTML = `<div class="ai-loading"><div class="spinner"></div>AIがアドバイス作成中...</div>`;
+  try {
+    const res = await fetchJson("/api/jobs/ai/iv-advice", {
+      method: "POST",
+      body: JSON.stringify({ companyName: c.name, interviewType: iv.type, question: qa.question }),
+    });
+    qa.aiAdvice = res.advice;
+    qa.updatedAt = now();
+    c.updatedAt = now();
+    scheduleSave();
+    if (el) el.innerHTML = `<div class="es-review-panel" style="border-color:#6366f120;background:var(--surface-2)"><div class="es-review-label" style="color:#6366f1"><svg viewBox="0 0 20 20" fill="currentColor" style="width:12px;height:12px"><path fill-rule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-8-3a1 1 0 00-.867.5 1 1 0 11-1.731-1A3 3 0 0113 8a3.001 3.001 0 01-2 2.83V11a1 1 0 11-2 0v-1a1 1 0 011-1 1 1 0 100-2zm0 8a1 1 0 100-2 1 1 0 000 2z" clip-rule="evenodd"/></svg>AIアドバイス</div><div class="md-content">${markdownToHtml(res.advice)}</div></div>`;
+    toast("アドバイスを取得しました");
+  } catch (e) {
+    if (el) el.innerHTML = `<div style="color:var(--red);font-size:13px;padding:8px 0">${escHtml(e.message)}</div>`;
+    toast(e.message, 5000);
+  }
+}
+
+/* ===== AI Tools Tab ===== */
+function renderToolsTab(c) {
+  return `
+    <div style="max-width:720px;display:grid;gap:20px">
+
+      <div class="card">
+        <div class="card-header">
+          <span class="card-title">応募メール生成</span>
+        </div>
+        <div class="card-body">
+          <p style="font-size:13px;color:var(--text-3);margin-bottom:12px">企業情報とあなたのプロフィールをもとに、最適な応募メールを1クリックで生成します</p>
+          <div class="form-group">
+            <label class="form-label">メール種別</label>
+            <select class="form-select" id="email-type-${c.id}" style="max-width:240px">
+              <option value="応募">インターン/選考への応募メール</option>
+              <option value="お礼">面接後のお礼メール</option>
+              <option value="問い合わせ">採用情報の問い合わせメール</option>
+              <option value="辞退">選考辞退メール</option>
+            </select>
+          </div>
+          <div class="form-group mt-3">
+            <label class="form-label">自己PR（任意）</label>
+            <textarea class="form-textarea" id="email-selfpr-${c.id}" rows="3" placeholder="自己PRがあれば入力（省略可）">${escHtml(c.baseSelfPr || "")}</textarea>
+          </div>
+          <button class="btn btn-ai mt-3" onclick="generateApplicationEmail('${c.id}')">
+            <svg viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M11.3 1.046A1 1 0 0112 2v5h4a1 1 0 01.82 1.573l-7 10A1 1 0 018 18v-5H4a1 1 0 01-.82-1.573l7-10a1 1 0 011.12-.38z" clip-rule="evenodd"/></svg>
+            メールを生成
+          </button>
+          <div id="email-result-${c.id}" style="margin-top:16px"></div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-header">
+          <span class="card-title">求人URL・テキストスキャン</span>
+        </div>
+        <div class="card-body">
+          <p style="font-size:13px;color:var(--text-3);margin-bottom:12px">求人URLまたは求人票テキストを貼り付けると、企業情報・求める人物像・必要スキルを自動抽出します</p>
+          <div class="form-group">
+            <label class="form-label">求人URL（任意）</label>
+            <input class="form-input" id="job-url-${c.id}" type="url" placeholder="https://job.rikunabi.com/..." />
+          </div>
+          <div class="form-group mt-3">
+            <label class="form-label">求人票テキスト（URLが使えない場合はここに貼り付け）</label>
+            <textarea class="form-textarea" id="job-text-${c.id}" rows="5" placeholder="求人ページからコピーしたテキストを貼り付けてください"></textarea>
+          </div>
+          <button class="btn btn-ai mt-3" onclick="scanJobInfo('${c.id}')">
+            <svg viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M11.3 1.046A1 1 0 0112 2v5h4a1 1 0 01.82 1.573l-7 10A1 1 0 018 18v-5H4a1 1 0 01-.82-1.573l7-10a1 1 0 011.12-.38z" clip-rule="evenodd"/></svg>
+            情報を抽出
+          </button>
+          <div id="jobscan-result-${c.id}" style="margin-top:16px">
+            ${c.jobScanResult ? `<div class="ai-result md-content">${markdownToHtml(c.jobScanResult)}</div>` : ""}
+          </div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-header">
+          <span class="card-title">自己PR最適化</span>
+        </div>
+        <div class="card-body">
+          <p style="font-size:13px;color:var(--text-3);margin-bottom:12px">ベースとなる自己PRを${escHtml(c.name)}の企業理念・求める人物像に合わせて最適化します</p>
+          <div class="form-group">
+            <label class="form-label">ベース自己PR <span style="color:var(--red)">*</span></label>
+            <textarea class="form-textarea" id="selfpr-base-${c.id}" rows="6" placeholder="現在の自己PRを入力してください">${escHtml(c.baseSelfPr || "")}</textarea>
+          </div>
+          <button class="btn btn-ai mt-3" onclick="optimizeSelfPr('${c.id}')">
+            <svg viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M11.3 1.046A1 1 0 0112 2v5h4a1 1 0 01.82 1.573l-7 10A1 1 0 018 18v-5H4a1 1 0 01-.82-1.573l7-10a1 1 0 011.12-.38z" clip-rule="evenodd"/></svg>
+            ${escHtml(c.name)}向けに最適化
+          </button>
+          <div id="selfpr-result-${c.id}" style="margin-top:16px">
+            ${c.optimizedSelfPr ? `<div class="ai-result"><div style="font-size:11.5px;font-weight:700;color:var(--accent);margin-bottom:8px">最適化された自己PR</div><div class="md-content">${markdownToHtml(c.optimizedSelfPr)}</div></div>` : ""}
+          </div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-header">
+          <span class="card-title">ギャップ分析</span>
+        </div>
+        <div class="card-body">
+          <p style="font-size:13px;color:var(--text-3);margin-bottom:12px">企業が求めるものとあなたのESや自己PRを比較し、アピールすべき点と補強が必要な点を分析します</p>
+          <button class="btn btn-ai" onclick="runGapAnalysis('${c.id}')">
+            <svg viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M11.3 1.046A1 1 0 0112 2v5h4a1 1 0 01.82 1.573l-7 10A1 1 0 018 18v-5H4a1 1 0 01-.82-1.573l7-10a1 1 0 011.12-.38z" clip-rule="evenodd"/></svg>
+            ギャップ分析を実行
+          </button>
+          <div id="gap-result-${c.id}" style="margin-top:16px">
+            ${c.gapAnalysis ? `<div class="ai-result md-content">${markdownToHtml(c.gapAnalysis)}</div>` : ""}
+          </div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-header">
+          <span class="card-title">面接シミュレーター</span>
+          <span style="font-size:11px;background:var(--accent);color:#fff;padding:2px 8px;border-radius:99px">NEW</span>
+        </div>
+        <div class="card-body">
+          <p style="font-size:13px;color:var(--text-3);margin-bottom:12px">AIが${escHtml(c.name)}の面接官を演じ、実践的な面接練習ができます。回答するとAIが即座にフィードバックします。</p>
+          <div style="display:flex;gap:8px;flex-wrap:wrap">
+            <button class="btn btn-primary" onclick="startMockInterview('${c.id}','一次面接')">一次面接を練習</button>
+            <button class="btn btn-secondary" onclick="startMockInterview('${c.id}','最終面接')">最終面接を練習</button>
+          </div>
+          <div id="mock-interview-${c.id}" style="margin-top:16px"></div>
+        </div>
+      </div>
+
+    </div>
+  `;
+}
+
+async function generateApplicationEmail(companyId) {
+  const c = getCompany(companyId);
+  if (!c) return;
+  const emailType = document.getElementById(`email-type-${companyId}`)?.value || "応募";
+  const selfPr = document.getElementById(`email-selfpr-${companyId}`)?.value.trim() || "";
+  const el = document.getElementById(`email-result-${companyId}`);
+  if (el) el.innerHTML = `<div class="ai-loading"><div class="spinner"></div>メール生成中...</div>`;
+  try {
+    const res = await fetchJson("/api/jobs/ai/generate-email", {
+      method: "POST",
+      body: JSON.stringify({ companyName: c.name, industry: c.industry, selectionType: c.selectionType || "インターン", emailType, selfPr, status: c.status }),
+    });
+    if (el) el.innerHTML = `
+      <div class="ai-result">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+          <div style="font-size:11.5px;font-weight:700;color:var(--accent)">生成されたメール</div>
+          <button class="btn btn-secondary btn-sm" onclick="copyText(document.getElementById('email-text-${companyId}').textContent)">コピー</button>
+        </div>
+        <pre id="email-text-${companyId}" style="white-space:pre-wrap;font-size:13px;line-height:1.7;background:var(--bg);padding:12px;border-radius:8px;border:1px solid var(--border)">${escHtml(res.email)}</pre>
+      </div>`;
+    toast("メールを生成しました");
+  } catch (e) {
+    if (el) el.innerHTML = `<div style="color:var(--red);font-size:13px">${escHtml(e.message)}</div>`;
+    toast(e.message, 5000);
+  }
+}
+
+async function scanJobInfo(companyId) {
+  const c = getCompany(companyId);
+  if (!c) return;
+  const jobUrl = document.getElementById(`job-url-${companyId}`)?.value.trim() || "";
+  const jobText = document.getElementById(`job-text-${companyId}`)?.value.trim() || "";
+  if (!jobUrl && !jobText) { toast("URLまたは求人テキストを入力してください"); return; }
+  const el = document.getElementById(`jobscan-result-${companyId}`);
+  if (el) el.innerHTML = `<div class="ai-loading"><div class="spinner"></div>求人情報を解析中...</div>`;
+  try {
+    const res = await fetchJson("/api/jobs/ai/scan-job", {
+      method: "POST",
+      body: JSON.stringify({ companyName: c.name, jobUrl, jobText }),
+    });
+    c.jobScanResult = res.result;
+    c.updatedAt = now();
+    scheduleSave();
+    if (el) el.innerHTML = `<div class="ai-result md-content">${markdownToHtml(res.result)}</div>`;
+    toast("求人情報を抽出しました");
+  } catch (e) {
+    if (el) el.innerHTML = `<div style="color:var(--red);font-size:13px">${escHtml(e.message)}</div>`;
+    toast(e.message, 5000);
+  }
+}
+
+async function optimizeSelfPr(companyId) {
+  const c = getCompany(companyId);
+  if (!c) return;
+  const basePr = document.getElementById(`selfpr-base-${companyId}`)?.value.trim() || "";
+  if (!basePr) { toast("ベース自己PRを入力してください"); return; }
+  c.baseSelfPr = basePr;
+  const el = document.getElementById(`selfpr-result-${companyId}`);
+  if (el) el.innerHTML = `<div class="ai-loading"><div class="spinner"></div>最適化中...</div>`;
+  try {
+    const res = await fetchJson("/api/jobs/ai/optimize-selfpr", {
+      method: "POST",
+      body: JSON.stringify({ companyName: c.name, industry: c.industry, selectionType: c.selectionType || "インターン", basePr, esEntries: (c.es || []).map(e => ({ question: e.question, answer: e.answer })) }),
+    });
+    c.optimizedSelfPr = res.optimized;
+    c.updatedAt = now();
+    scheduleSave();
+    if (el) el.innerHTML = `
+      <div class="ai-result">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+          <div style="font-size:11.5px;font-weight:700;color:var(--accent)">最適化された自己PR</div>
+          <button class="btn btn-secondary btn-sm" onclick="copyText(document.getElementById('selfpr-out-${companyId}').textContent)">コピー</button>
+        </div>
+        <div id="selfpr-out-${companyId}" class="md-content">${markdownToHtml(res.optimized)}</div>
+      </div>`;
+    toast("自己PRを最適化しました");
+  } catch (e) {
+    if (el) el.innerHTML = `<div style="color:var(--red);font-size:13px">${escHtml(e.message)}</div>`;
+    toast(e.message, 5000);
+  }
+}
+
+async function runGapAnalysis(companyId) {
+  const c = getCompany(companyId);
+  if (!c) return;
+  const el = document.getElementById(`gap-result-${companyId}`);
+  if (el) el.innerHTML = `<div class="ai-loading"><div class="spinner"></div>ギャップ分析中...</div>`;
+  try {
+    const res = await fetchJson("/api/jobs/ai/gap-analysis", {
+      method: "POST",
+      body: JSON.stringify({
+        companyName: c.name,
+        industry: c.industry,
+        selectionType: c.selectionType || "インターン",
+        esEntries: (c.es || []).map(e => ({ question: e.question, answer: e.answer })),
+        selfPr: c.baseSelfPr || "",
+        notes: c.notes || "",
+      }),
+    });
+    c.gapAnalysis = res.analysis;
+    c.updatedAt = now();
+    scheduleSave();
+    if (el) el.innerHTML = `<div class="ai-result md-content">${markdownToHtml(res.analysis)}</div>`;
+    toast("ギャップ分析が完了しました");
+  } catch (e) {
+    if (el) el.innerHTML = `<div style="color:var(--red);font-size:13px">${escHtml(e.message)}</div>`;
+    toast(e.message, 5000);
+  }
+}
+
+async function startMockInterview(companyId, interviewType) {
+  const c = getCompany(companyId);
+  if (!c) return;
+  const el = document.getElementById(`mock-interview-${companyId}`);
+  if (el) el.innerHTML = `<div class="ai-loading"><div class="spinner"></div>面接官を準備中...</div>`;
+  try {
+    const res = await fetchJson("/api/jobs/ai/mock-interview-start", {
+      method: "POST",
+      body: JSON.stringify({ companyName: c.name, interviewType }),
+    });
+    if (el) el.innerHTML = renderMockInterviewUI(companyId, interviewType, res.question, res.context, []);
+  } catch (e) {
+    if (el) el.innerHTML = `<div style="color:var(--red);font-size:13px">${escHtml(e.message)}</div>`;
+    toast(e.message, 5000);
+  }
+}
+
+function renderMockInterviewUI(companyId, interviewType, question, context, history) {
+  const historyHtml = history.map(h => `
+    <div style="margin-bottom:12px">
+      <div style="font-size:12px;font-weight:700;color:var(--text-3);margin-bottom:4px">面接官:</div>
+      <div style="font-size:13px;padding:8px 12px;background:var(--surface-2);border-radius:8px;border-left:3px solid var(--accent)">${escHtml(h.q)}</div>
+      <div style="font-size:12px;font-weight:700;color:var(--text-3);margin:8px 0 4px">あなた:</div>
+      <div style="font-size:13px;padding:8px 12px;background:var(--bg);border-radius:8px;border:1px solid var(--border)">${escHtml(h.a)}</div>
+      ${h.feedback ? `<div style="font-size:12px;padding:8px 12px;background:#f0fdf420;border-radius:8px;border-left:3px solid #22c55e;margin-top:6px;color:var(--text-2)">${markdownToHtml(h.feedback)}</div>` : ""}
+    </div>
+  `).join("");
+
+  const historyJson = escHtml(JSON.stringify(history));
+  const contextEsc = escHtml(context || "");
+  const interviewTypeEsc = escHtml(interviewType);
+  const questionEsc = escHtml(question);
+
+  return `
+    <div style="border:1px solid var(--border);border-radius:12px;overflow:hidden">
+      <div style="background:var(--accent);color:#fff;padding:10px 16px;font-size:13px;font-weight:700">
+        ${interviewTypeEsc} シミュレーション - ${escHtml(getCompany(companyId)?.name || "")}
+      </div>
+      <div style="padding:16px;max-height:400px;overflow-y:auto" id="mock-history-${companyId}">
+        ${historyHtml}
+        <div style="margin-bottom:12px">
+          <div style="font-size:12px;font-weight:700;color:var(--text-3);margin-bottom:4px">面接官:</div>
+          <div style="font-size:13px;padding:10px 14px;background:var(--surface-2);border-radius:8px;border-left:3px solid var(--accent);font-weight:500">${questionEsc}</div>
+        </div>
+      </div>
+      <div style="padding:12px 16px;border-top:1px solid var(--border);background:var(--surface)">
+        <textarea class="form-textarea" id="mock-answer-${companyId}" rows="3" placeholder="回答を入力してください..." style="margin-bottom:8px"></textarea>
+        <div style="display:flex;gap:8px">
+          <button class="btn btn-primary btn-sm" onclick="submitMockAnswer('${companyId}','${interviewTypeEsc}','${questionEsc}',${historyJson},'${contextEsc}')">回答して次の質問へ</button>
+          <button class="btn btn-ghost btn-sm" onclick="document.getElementById('mock-interview-${companyId}').innerHTML=''">終了</button>
+        </div>
+      </div>
+    </div>
+  `;
+}
+
+async function submitMockAnswer(companyId, interviewType, question, history, context) {
+  const c = getCompany(companyId);
+  const answer = document.getElementById(`mock-answer-${companyId}`)?.value.trim();
+  if (!answer) { toast("回答を入力してください"); return; }
+  const el = document.getElementById(`mock-interview-${companyId}`);
+  if (el) el.innerHTML = `<div class="ai-loading"><div class="spinner"></div>AIが評価中...</div>`;
+  try {
+    const res = await fetchJson("/api/jobs/ai/mock-interview-next", {
+      method: "POST",
+      body: JSON.stringify({ companyName: c.name, interviewType, question, answer, history, context }),
+    });
+    const newHistory = [...history, { q: question, a: answer, feedback: res.feedback }];
+    if (el) el.innerHTML = renderMockInterviewUI(companyId, interviewType, res.nextQuestion, context, newHistory);
+    setTimeout(() => {
+      const histEl = document.getElementById(`mock-history-${companyId}`);
+      if (histEl) histEl.scrollTop = histEl.scrollHeight;
+    }, 100);
+  } catch (e) {
+    if (el) el.innerHTML = `<div style="color:var(--red);font-size:13px">${escHtml(e.message)}</div>`;
+    toast(e.message, 5000);
+  }
+}
+
+function copyText(text) {
+  navigator.clipboard.writeText(text).then(() => toast("コピーしました")).catch(() => toast("コピーに失敗しました"));
 }
 
 /* ===== Calendar ===== */
