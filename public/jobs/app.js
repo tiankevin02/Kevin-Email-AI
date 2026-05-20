@@ -42,6 +42,7 @@ let calYear = jstNow().getUTCFullYear();
 let calMonth = jstNow().getUTCMonth();
 let calSelectedDate = null;
 let companyBackView = "companies";
+let settingsReturnView = "dashboard";
 let filterStatus = "all";
 let filterSelectionType = "all";
 let searchQuery = "";
@@ -277,6 +278,13 @@ function handleRoute() {
   if (!viewEl) return;
   viewEl.classList.add("active");
 
+  // Settings opening animation on mobile
+  if (view === "settings" && window.innerWidth <= 768) {
+    viewEl.classList.remove("settings-closing");
+    viewEl.classList.add("settings-opening");
+    viewEl.addEventListener("animationend", () => viewEl.classList.remove("settings-opening"), { once: true });
+  }
+
   if (view === "company") {
     companyBackView = currentView === "calendar" ? "calendar" : "companies";
   }
@@ -295,6 +303,23 @@ function handleRoute() {
 }
 
 window.addEventListener("hashchange", handleRoute);
+
+function toggleMobileSettings() {
+  if (currentView === "settings") {
+    // 吸い込まれるアニメーションで閉じる
+    const el = document.getElementById("view-settings");
+    el.classList.remove("settings-opening");
+    el.classList.add("settings-closing");
+    setTimeout(() => {
+      el.classList.remove("settings-closing", "active");
+      navigate(`#${settingsReturnView || "dashboard"}`);
+    }, 280);
+  } else {
+    // 開く前に戻り先を記憶
+    settingsReturnView = currentView || "dashboard";
+    navigate("#settings");
+  }
+}
 
 /* ===== Dashboard ===== */
 function renderDashboard() {
