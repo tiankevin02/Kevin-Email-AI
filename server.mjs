@@ -441,6 +441,71 @@ async function jobsAiChat(state, systemPrompt, userContent) {
   throw err;
 }
 
+async function quizAiWithImage(state, systemPrompt, userText, imageBase64, mimeType) {
+  for (const provider of aiProviderOrder(state)) {
+    try {
+      let result = null;
+      if (provider === "anthropic" && configuredAnthropic(state)) {
+        const config = anthropicConfig(state);
+        const response = await fetch("https://api.anthropic.com/v1/messages", {
+          method: "POST",
+          headers: { "content-type": "application/json", "x-api-key": config.key, "anthropic-version": "2023-06-01" },
+          body: JSON.stringify({
+            model: config.model, max_tokens: 4096, system: systemPrompt,
+            messages: [{ role: "user", content: [
+              { type: "image", source: { type: "base64", media_type: mimeType, data: imageBase64 } },
+              { type: "text", text: userText }
+            ]}]
+          })
+        });
+        const body = await response.json();
+        result = response.ok ? (body.content?.[0]?.text?.trim() || "") : null;
+      } else if (provider === "gemini" && configuredGemini(state)) {
+        const config = geminiConfig(state);
+        const response = await fetch(
+          `https://generativelanguage.googleapis.com/v1beta/models/${config.model}:generateContent?key=${config.key}`,
+          {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({
+              systemInstruction: { parts: [{ text: systemPrompt }] },
+              contents: [{ role: "user", parts: [
+                { inline_data: { mime_type: mimeType, data: imageBase64 } },
+                { text: userText }
+              ]}],
+              generationConfig: { temperature: 0.3, maxOutputTokens: 4096 }
+            })
+          }
+        );
+        const body = await response.json();
+        result = response.ok ? (body.candidates?.[0]?.content?.parts?.[0]?.text?.trim() || "") : null;
+      } else if (provider === "openai" && configuredOpenAI(state)) {
+        const config = openAIConfig(state);
+        const response = await fetch("https://api.openai.com/v1/chat/completions", {
+          method: "POST",
+          headers: { authorization: `Bearer ${config.key}`, "content-type": "application/json" },
+          body: JSON.stringify({
+            model: "gpt-4o", temperature: 0.3,
+            messages: [
+              { role: "system", content: systemPrompt },
+              { role: "user", content: [
+                { type: "image_url", image_url: { url: `data:${mimeType};base64,${imageBase64}` } },
+                { type: "text", text: userText }
+              ]}
+            ]
+          })
+        });
+        const body = await response.json();
+        result = response.ok ? (body.choices?.[0]?.message?.content?.trim() || "") : null;
+      }
+      if (result !== null) return result;
+    } catch {}
+  }
+  const err = new Error("画像対応AIが設定されていません。Anthropic / Gemini / OpenAI のAPIキーを設定してください。");
+  err.status = 400;
+  throw err;
+}
+
 function redirect(res, location) {
   res.writeHead(302, { location });
   res.end();
@@ -1918,8 +1983,8 @@ JSONのみを返してください。`;
     }
 
     if (req.method === "POST" && url.pathname === "/api/quiz/answer") {
-      const { question, type } = await parseBody(req);
-      if (!question) { sendJson(res, 400, { error: "問題文を入力してください。" }); return; }
+      const { question, type, imageBase64, imageMimeType, noExplanation } = await parseBody(req);
+      if (!question && !imageBase64) { sendJson(res, 400, { error: "問題文または画像を入力してください。" }); return; }
       if (!configuredAI(state)) {
         const err = new Error("AIサービスが設定されていません。設定からAPIキーを入力してください。");
         err.status = 400;
@@ -1933,12 +1998,10 @@ JSONのみを返してください。`;
         other: "その他の適性検査"
       };
       const typeHint = typeDescriptions[type] || "言語・非言語・英語など各種Webテスト問題";
-      const system = `あなたはSPI・TG-WEB・GABなど日本のWebテスト（適性検査）の専門家です。
-受験者から問題が送られてきたら、正確な解答と丁寧な解説を提供してください。
-
-【対応する問題タイプ】${typeHint}
-
-【回答の形式】
+      const answerFormat = noExplanation
+        ? `【回答の形式】
+正解（選択肢記号または答え）を1〜2行で簡潔に答えるだけ。解説不要。`
+        : `【回答の形式】
 1. まず「## 解答」として正解（選択肢記号または答え）を明示する
 2. 「## 解説」として解き方・考え方を段階的に説明する
 3. 「## ポイント」として類題で使えるコツや公式を簡潔にまとめる
@@ -1946,7 +2009,21 @@ JSONのみを返してください。`;
 解答は必ず根拠とともに示し、受験者が理解できるよう丁寧に説明してください。
 計算問題は途中の計算過程も示してください。
 選択肢がある場合は、各選択肢が正しい/誤りの理由も説明してください。`;
-      const answer = await jobsAiChat(state, system, question);
+      const system = `あなたはSPI・TG-WEB・GABなど日本のWebテスト（適性検査）の専門家です。
+受験者から問題が送られてきたら、正確な解答${noExplanation ? "" : "と丁寧な解説"}を提供してください。
+
+【対応する問題タイプ】${typeHint}
+
+${answerFormat}`;
+
+      let answer;
+      if (imageBase64) {
+        const mimeType = imageMimeType || "image/png";
+        const userText = question || "画像の問題を読み取り、正解を示してください。";
+        answer = await quizAiWithImage(state, system, userText, imageBase64, mimeType);
+      } else {
+        answer = await jobsAiChat(state, system, question);
+      }
       sendJson(res, 200, { answer });
       return;
     }

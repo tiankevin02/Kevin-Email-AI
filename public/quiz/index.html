@@ -17,15 +17,15 @@
               <rect width="20" height="20" rx="6" fill="#4f46e5"/>
               <path d="M5 7h10M5 10h7M5 13h9" stroke="white" stroke-width="1.5" stroke-linecap="round"/>
             </svg>
-            <span>問題</span>
+            <span>問題入力</span>
           </div>
           <div class="panel-actions">
             <select id="question-type" class="select-sm" title="問題種別">
-              <option value="auto">種別: 自動判定</option>
-              <option value="verbal">言語（国語）</option>
-              <option value="nonverbal">非言語（数学）</option>
+              <option value="auto">自動判定</option>
+              <option value="verbal">言語</option>
+              <option value="nonverbal">非言語</option>
               <option value="english">英語</option>
-              <option value="personality">性格検査</option>
+              <option value="personality">性格</option>
               <option value="other">その他</option>
             </select>
             <button class="btn-icon" id="clear-btn" title="クリア">
@@ -34,37 +34,76 @@
           </div>
         </div>
 
-        <div class="input-area">
+        <!-- タブ切替 -->
+        <div class="tab-bar">
+          <button class="tab active" id="tab-text" data-tab="text">テキスト入力</button>
+          <button class="tab" id="tab-image" data-tab="image">
+            <svg viewBox="0 0 16 16" fill="currentColor" width="13" height="13"><path fill-rule="evenodd" d="M1.5 2A1.5 1.5 0 000 3.5v9A1.5 1.5 0 001.5 14h13a1.5 1.5 0 001.5-1.5v-9A1.5 1.5 0 0014.5 2h-13zm4.5 6.5l2 2 3-3.5 3.5 4.5H2l4-3z" clip-rule="evenodd"/></svg>
+            スクリーンショット
+          </button>
+        </div>
+
+        <!-- テキスト入力パネル -->
+        <div class="input-area" id="input-text">
           <textarea
             id="question-input"
             class="question-textarea"
-            placeholder="ここにWebテストの問題をコピー＆ペーストしてください。
+            placeholder="問題文をここに貼り付けてください（Ctrl+Enter で解答）
 
-例：
-次の文章を読んで、設問に答えなさい。
-...
+【例】
+次の選択肢から正しいものを選べ。
+A. 選択肢1
+B. 選択肢2
+C. 選択肢3"
+            spellcheck="false"
+          ></textarea>
+        </div>
 
-【選択肢】
-A. ...
-B. ...
-C. ...
-D. ..."
+        <!-- 画像入力パネル -->
+        <div class="input-area hidden" id="input-image">
+          <div class="image-drop-zone" id="image-drop-zone">
+            <div class="image-drop-inner" id="image-drop-inner">
+              <svg width="40" height="40" viewBox="0 0 40 40" fill="none">
+                <circle cx="20" cy="20" r="18" fill="rgba(79,70,229,0.1)" stroke="rgba(79,70,229,0.3)" stroke-width="1.5"/>
+                <path d="M20 12v10M15 17l5-5 5 5" stroke="#818cf8" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+                <path d="M12 26h16" stroke="#818cf8" stroke-width="1.5" stroke-linecap="round"/>
+              </svg>
+              <p class="drop-title">スクリーンショットを貼り付け</p>
+              <p class="drop-hint">Ctrl+V で貼り付け、またはドラッグ&ドロップ</p>
+              <button class="btn-outline" id="paste-btn">クリックして貼り付け</button>
+            </div>
+            <img id="image-preview" class="image-preview hidden" alt="プレビュー" />
+            <button class="image-clear-btn hidden" id="image-clear-btn" title="画像を削除">
+              <svg viewBox="0 0 20 20" fill="currentColor" width="14" height="14"><path fill-rule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clip-rule="evenodd"/></svg>
+            </button>
+          </div>
+          <textarea
+            id="image-hint-input"
+            class="image-hint-textarea"
+            placeholder="補足（任意）: 「第3問だけ答えて」など"
             spellcheck="false"
           ></textarea>
         </div>
 
         <div class="input-footer">
-          <div class="char-count" id="char-count">0 文字</div>
+          <div class="footer-left">
+            <span class="char-count" id="char-count">0 文字</span>
+            <label class="toggle-label" id="no-explanation-toggle" title="解説なしで答えだけ返す">
+              <input type="checkbox" id="no-explanation-cb" />
+              <span class="toggle-track"><span class="toggle-thumb"></span></span>
+              <span>答えのみ</span>
+            </label>
+          </div>
           <button class="btn-primary" id="submit-btn">
-            <svg viewBox="0 0 20 20" fill="currentColor" width="16" height="16"><path fill-rule="evenodd" d="M11.3 1.046A1 1 0 0112 2v5h4a1 1 0 01.82 1.573l-7 10A1 1 0 018 18v-5H4a1 1 0 01-.82-1.573l7-10a1 1 0 011.12-.38z" clip-rule="evenodd"/></svg>
-            解答を生成
+            <svg viewBox="0 0 20 20" fill="currentColor" width="15" height="15"><path fill-rule="evenodd" d="M11.3 1.046A1 1 0 0112 2v5h4a1 1 0 01.82 1.573l-7 10A1 1 0 018 18v-5H4a1 1 0 01-.82-1.573l7-10a1 1 0 011.12-.38z" clip-rule="evenodd"/></svg>
+            解答
           </button>
         </div>
 
-        <div class="history-section" id="history-section">
+        <div class="history-section">
           <div class="history-header">
             <span>履歴</span>
-            <button class="btn-text" id="clear-history-btn">すべて削除</button>
+            <button class="btn-text" id="clear-history-btn">削除</button>
           </div>
           <div class="history-list" id="history-list">
             <div class="history-empty">まだ履歴がありません</div>
@@ -73,7 +112,7 @@ D. ..."
       </div>
 
       <!-- リサイズハンドル -->
-      <div class="divider" id="divider" title="ドラッグでサイズ変更"></div>
+      <div class="divider" id="divider"></div>
 
       <!-- 右パネル：解答表示 -->
       <div class="panel panel-right" id="panel-right">
@@ -83,13 +122,13 @@ D. ..."
               <rect width="20" height="20" rx="6" fill="#059669"/>
               <path d="M6 10l3 3 5-5" stroke="white" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
             </svg>
-            <span>解答・解説</span>
+            <span>解答</span>
           </div>
           <div class="panel-actions">
             <button class="btn-icon" id="copy-btn" title="コピー" style="display:none">
               <svg viewBox="0 0 20 20" fill="currentColor"><path d="M8 3a1 1 0 011-1h2a1 1 0 110 2H9a1 1 0 01-1-1z"/><path d="M6 3a2 2 0 00-2 2v11a2 2 0 002 2h8a2 2 0 002-2V5a2 2 0 00-2-2 3 3 0 01-3 3H9a3 3 0 01-3-3z"/></svg>
             </button>
-            <a href="/" class="btn-icon" title="メールAIに戻る">
+            <a href="/" class="btn-icon" title="メールAIへ">
               <svg viewBox="0 0 20 20" fill="currentColor"><path d="M2.003 5.884L10 9.882l7.997-3.998A2 2 0 0016 4H4a2 2 0 00-1.997 1.884z"/><path d="M18 8.118l-8 4-8-4V14a2 2 0 002 2h12a2 2 0 002-2V8.118z"/></svg>
             </a>
           </div>
@@ -98,19 +137,19 @@ D. ..."
         <div class="answer-area" id="answer-area">
           <div class="answer-placeholder" id="answer-placeholder">
             <svg width="48" height="48" viewBox="0 0 48 48" fill="none">
-              <circle cx="24" cy="24" r="20" fill="#f1f5f9"/>
-              <path d="M16 24l6 6 10-10" stroke="#94a3b8" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
+              <circle cx="24" cy="24" r="20" fill="#1e293b"/>
+              <path d="M16 24l6 6 10-10" stroke="#475569" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
             </svg>
-            <p>左パネルに問題を入力して<br>「解答を生成」を押してください</p>
+            <p>問題を入力して「解答」を押してください</p>
             <ul class="tip-list">
-              <li>問題文と選択肢をそのまま貼り付けてOK</li>
-              <li>計算問題・言語問題・英語など対応</li>
-              <li>解答理由・解説も表示します</li>
+              <li>テキスト貼り付けまたはスクリーンショット対応</li>
+              <li>SPI・TG-WEB・GABなどすべての形式に対応</li>
+              <li>「答えのみ」モードで素早く確認</li>
             </ul>
           </div>
           <div class="answer-loading" id="answer-loading" style="display:none">
             <div class="spinner"></div>
-            <span>AIが解答中...</span>
+            <span>解答中...</span>
           </div>
           <div class="answer-content" id="answer-content" style="display:none"></div>
         </div>
@@ -118,7 +157,6 @@ D. ..."
     </div>
 
     <div id="toast" class="toast" role="alert" aria-live="polite"></div>
-
     <script src="/quiz/app.js"></script>
   </body>
 </html>
