@@ -267,7 +267,7 @@ function handleRoute() {
   const parts = hash.slice(1).split("/");
   const view = parts[0] || "dashboard";
 
-  document.querySelectorAll(".nav-item, .mobile-nav-item").forEach((el) => {
+  document.querySelectorAll(".nav-item, .mobile-nav-item, .mobile-settings-btn").forEach((el) => {
     el.classList.toggle("active", el.dataset.view === view);
   });
 
