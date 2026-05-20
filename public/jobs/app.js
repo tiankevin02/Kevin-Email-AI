@@ -1012,11 +1012,11 @@ function esEntryHtml(c, entry) {
   return `
     <div class="es-entry${collapseState.has(esId) ? " collapsed" : ""}" id="${esId}">
       <div class="es-entry-header">
-        <div class="collapse-trigger" onclick="toggleSection('${esId}')" style="flex:1;min-width:0;display:flex;align-items:center;gap:6px">
+        <div class="collapse-trigger" onclick="toggleSection('${esId}')" style="display:flex;align-items:flex-start;gap:6px">
           ${CHEV}
           <div class="es-question-text">${escHtml(entry.question)}</div>
         </div>
-        <div style="display:flex;gap:4px;flex-shrink:0;flex-wrap:wrap;justify-content:flex-end">
+        <div style="display:flex;gap:6px;flex-wrap:wrap">
           <button class="btn btn-ai btn-sm" onclick="runEsReview('${c.id}','${entry.id}')">
             <svg viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M11.3 1.046A1 1 0 0112 2v5h4a1 1 0 01.82 1.573l-7 10A1 1 0 018 18v-5H4a1 1 0 01-.82-1.573l7-10a1 1 0 011.12-.38z" clip-rule="evenodd"/></svg>
             AI添削
@@ -1703,11 +1703,11 @@ function ivQaEntryHtml(c, iv, qa) {
   return `
     <div class="es-entry${collapseState.has(`ivqa-${qa.id}`) ? " collapsed" : ""}" id="ivqa-${qa.id}" style="margin-bottom:12px">
       <div class="es-entry-header">
-        <div class="collapse-trigger" onclick="toggleSection('ivqa-${qa.id}')" style="flex:1;min-width:0;display:flex;align-items:center;gap:6px">
+        <div class="collapse-trigger" onclick="toggleSection('ivqa-${qa.id}')" style="display:flex;align-items:flex-start;gap:6px">
           ${CHEV}
           <div class="es-question-text" style="font-size:13px">${escHtml(qa.question)}</div>
         </div>
-        <div style="display:flex;gap:4px;flex-shrink:0;flex-wrap:wrap;justify-content:flex-end">
+        <div style="display:flex;gap:6px;flex-wrap:wrap">
           <button class="btn btn-ai btn-sm" onclick="runIvQaReview('${c.id}','${iv.id}','${qa.id}')">
             <svg viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M11.3 1.046A1 1 0 0112 2v5h4a1 1 0 01.82 1.573l-7 10A1 1 0 018 18v-5H4a1 1 0 01-.82-1.573l7-10a1 1 0 011.12-.38z" clip-rule="evenodd"/></svg>
             AI添削
