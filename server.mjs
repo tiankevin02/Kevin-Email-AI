@@ -420,10 +420,11 @@ async function tryProviderChat(provider, state, messages, temperature) {
         generationConfig: { temperature, maxOutputTokens: 4096 }
       };
       let { ok, status, body } = await callGeminiApi(config.key, config.model, reqBody);
-      if (!ok && isGeminiQuotaError(status, body) && config.fallbackModel !== config.model) {
-        console.log(`Gemini quota exceeded on ${config.model}, falling back to ${config.fallbackModel}`);
+      if (!ok && config.fallbackModel !== config.model) {
+        console.log(`Gemini ${config.model} failed (${status}), trying fallback ${config.fallbackModel}`);
         ({ ok, body } = await callGeminiApi(config.key, config.fallbackModel, reqBody));
       }
+      // 両モデル失敗 → null を返して jobsAiChat が次のプロバイダーへ進む
       return ok ? (body.candidates?.[0]?.content?.parts?.[0]?.text?.trim() || "") : null;
     }
     case "anthropic": {
@@ -519,8 +520,8 @@ async function quizAiWithImages(state, systemPrompt, userText, imgList) {
         parts.push({ text: userText });
         const reqBody = { systemInstruction: { parts: [{ text: systemPrompt }] }, contents: [{ role: "user", parts }], generationConfig: { temperature: 0.3, maxOutputTokens: 4096 } };
         let { ok, status, body } = await callGeminiApi(config.key, config.model, reqBody);
-        if (!ok && isGeminiQuotaError(status, body) && config.fallbackModel !== config.model) {
-          console.log(`Gemini quota exceeded on ${config.model}, falling back to ${config.fallbackModel}`);
+        if (!ok && config.fallbackModel !== config.model) {
+          console.log(`Gemini ${config.model} failed (${status}), trying fallback ${config.fallbackModel}`);
           ({ ok, body } = await callGeminiApi(config.key, config.fallbackModel, reqBody));
         }
         result = ok ? (body.candidates?.[0]?.content?.parts?.[0]?.text?.trim() || "") : null;
@@ -576,8 +577,8 @@ async function quizAiWithImage(state, systemPrompt, userText, imageBase64, mimeT
           generationConfig: { temperature: 0.3, maxOutputTokens: 4096 }
         };
         let { ok, status, body } = await callGeminiApi(config.key, config.model, reqBody);
-        if (!ok && isGeminiQuotaError(status, body) && config.fallbackModel !== config.model) {
-          console.log(`Gemini quota exceeded on ${config.model}, falling back to ${config.fallbackModel}`);
+        if (!ok && config.fallbackModel !== config.model) {
+          console.log(`Gemini ${config.model} failed (${status}), trying fallback ${config.fallbackModel}`);
           ({ ok, body } = await callGeminiApi(config.key, config.fallbackModel, reqBody));
         }
         result = ok ? (body.candidates?.[0]?.content?.parts?.[0]?.text?.trim() || "") : null;
