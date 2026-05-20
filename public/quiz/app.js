@@ -160,7 +160,10 @@ imageDropZone.addEventListener("drop", async (e) => {
 // ---- Submit ----
 submitBtn.addEventListener("click", submitQuestion);
 questionInput.addEventListener("keydown", (e) => {
-  if ((e.ctrlKey || e.metaKey) && e.key === "Enter") submitQuestion();
+  if (e.key === "Enter" && !e.shiftKey) {
+    e.preventDefault();
+    submitQuestion();
+  }
 });
 
 async function submitQuestion() {
