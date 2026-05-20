@@ -1237,3 +1237,71 @@ img { max-width: 100%; }
 .type-toggle-btn.active.intern { border-color: #1d4ed8; background: #dbeafe; color: #1d4ed8; }
 .type-toggle-btn.active.honsen { border-color: #be185d; background: #fce7f3; color: #be185d; }
 .type-toggle-btn:hover { border-color: var(--accent); }
+
+/* ===== Collapsible sections ===== */
+.collapse-chevron {
+  width: 15px;
+  height: 15px;
+  flex-shrink: 0;
+  transition: transform 0.2s ease;
+  color: var(--text-3);
+  opacity: 0.7;
+}
+.collapsed > .collapse-chevron,
+.collapsed .collapse-chevron { transform: rotate(-90deg); }
+
+/* Entry and card body collapse */
+.collapsed > .es-entry-body { display: none; }
+.collapsed > .interview-card-body { display: none; }
+.collapsed > .card-body { display: none; }
+.collapsed > .settings-section-body { display: none; }
+
+/* AI result panel collapse */
+.es-review-label {
+  cursor: pointer;
+  user-select: none;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.es-review-label::after {
+  content: "▾";
+  font-size: 13px;
+  color: var(--text-3);
+  transition: transform 0.2s ease;
+  display: inline-block;
+  flex-shrink: 0;
+}
+.es-review-panel.collapsed .es-review-label::after { transform: rotate(-90deg); }
+.es-review-panel.collapsed .md-content { display: none; }
+
+.panel-label {
+  cursor: pointer;
+  user-select: none;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.panel-label::after {
+  content: "▾";
+  font-size: 13px;
+  color: var(--text-3);
+  transition: transform 0.2s ease;
+  display: inline-block;
+  flex-shrink: 0;
+}
+.interview-tips-panel.collapsed .panel-label::after,
+.interview-feedback-panel.collapsed .panel-label::after { transform: rotate(-90deg); }
+.interview-tips-panel.collapsed .md-content,
+.interview-feedback-panel.collapsed .md-content { display: none; }
+
+/* Collapse trigger hover */
+.collapse-trigger {
+  cursor: pointer;
+  user-select: none;
+}
+.collapse-trigger:hover .collapse-chevron { opacity: 1; }
+.settings-section-header { cursor: pointer; user-select: none; }
+.settings-section-header:hover { opacity: 0.82; }

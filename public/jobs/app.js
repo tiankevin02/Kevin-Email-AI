@@ -47,6 +47,13 @@ let filterStatus = "all";
 let filterSelectionType = "all";
 let searchQuery = "";
 let saveTimer = null;
+const collapseState = new Set();
+function toggleSection(id) {
+  const el = document.getElementById(id);
+  if (!el) return;
+  collapseState.has(id) ? (collapseState.delete(id), el.classList.remove("collapsed")) : (collapseState.add(id), el.classList.add("collapsed"));
+}
+const CHEV = `<svg class="collapse-chevron" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z" clip-rule="evenodd"/></svg>`;
 
 /* ===== Helpers ===== */
 function uid() {
@@ -473,6 +480,23 @@ function renderDashboard() {
           }
         </div>
       </div>
+      ${(() => {
+        const mypageList = state.companies.filter(c => c.mypageUrl);
+        if (!mypageList.length) return "";
+        return `
+        <div class="card" style="margin-top:16px">
+          <div class="card-header">
+            <span class="card-title">📋 マイページリンク</span>
+          </div>
+          <div class="card-body" style="display:flex;flex-direction:column;gap:8px">
+            ${mypageList.map(c => `
+              <div style="display:flex;align-items:center;justify-content:space-between;gap:8px">
+                <span style="font-size:13.5px;font-weight:600;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escHtml(c.name)}</span>
+                <a href="${escHtml(c.mypageUrl)}" target="_blank" rel="noopener" class="btn btn-secondary btn-sm" style="flex-shrink:0">開く</a>
+              </div>`).join("")}
+          </div>
+        </div>`;
+      })()}
     </div>
   `;
 }
@@ -813,6 +837,10 @@ function renderOverviewTab(c) {
               <label class="form-label">企業URL</label>
               <input class="form-input" type="url" value="${escHtml(c.url || "")}" onchange="updateCompanyField('${c.id}','url',this.value)" placeholder="https://..." />
             </div>
+            <div class="form-group">
+              <label class="form-label">マイページURL</label>
+              <input class="form-input" type="url" value="${escHtml(c.mypageUrl || "")}" onchange="updateCompanyField('${c.id}','mypageUrl',this.value)" placeholder="https://mypage.xxx.co.jp/..." />
+            </div>
           </div>
           <div class="form-group">
             <label class="form-label">メモ・志望動機</label>
@@ -917,10 +945,14 @@ function esEntryHtml(c, entry) {
   const maxHint = entry.maxChars ? `/${entry.maxChars}` : "";
   const countClass = entry.maxChars && charCount > entry.maxChars ? "over" : entry.maxChars && charCount > entry.maxChars * 0.9 ? "warn" : "";
 
+  const esId = `es-${entry.id}`;
   return `
-    <div class="es-entry" id="es-${entry.id}">
+    <div class="es-entry${collapseState.has(esId) ? " collapsed" : ""}" id="${esId}">
       <div class="es-entry-header">
-        <div class="es-question-text">${escHtml(entry.question)}</div>
+        <div class="collapse-trigger" onclick="toggleSection('${esId}')" style="flex:1;min-width:0;display:flex;align-items:center;gap:6px">
+          ${CHEV}
+          <div class="es-question-text">${escHtml(entry.question)}</div>
+        </div>
         <div style="display:flex;gap:4px;flex-shrink:0;flex-wrap:wrap;justify-content:flex-end">
           <button class="btn btn-ai btn-sm" onclick="runEsReview('${c.id}','${entry.id}')">
             <svg viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M11.3 1.046A1 1 0 0112 2v5h4a1 1 0 01.82 1.573l-7 10A1 1 0 018 18v-5H4a1 1 0 01-.82-1.573l7-10a1 1 0 011.12-.38z" clip-rule="evenodd"/></svg>
@@ -944,8 +976,7 @@ function esEntryHtml(c, entry) {
           ${entry.aiReview
             ? `<div class="es-review-panel">
                 <div class="es-review-label">
-                  <svg viewBox="0 0 20 20" fill="currentColor" style="width:12px;height:12px"><path fill-rule="evenodd" d="M11.3 1.046A1 1 0 0112 2v5h4a1 1 0 01.82 1.573l-7 10A1 1 0 018 18v-5H4a1 1 0 01-.82-1.573l7-10a1 1 0 011.12-.38z" clip-rule="evenodd"/></svg>
-                  AI添削結果
+                  <span style="display:flex;align-items:center;gap:4px"><svg viewBox="0 0 20 20" fill="currentColor" style="width:12px;height:12px"><path fill-rule="evenodd" d="M11.3 1.046A1 1 0 0112 2v5h4a1 1 0 01.82 1.573l-7 10A1 1 0 018 18v-5H4a1 1 0 01-.82-1.573l7-10a1 1 0 011.12-.38z" clip-rule="evenodd"/></svg>AI添削結果</span>
                 </div>
                 <div class="md-content">${markdownToHtml(entry.aiReview)}</div>
               </div>`
@@ -953,9 +984,7 @@ function esEntryHtml(c, entry) {
           ${entry.aiAdvice
             ? `<div class="es-review-panel" style="border-color:#6366f120;background:var(--surface-2)">
                 <div class="es-review-label" style="color:#6366f1">
-                  <svg viewBox="0 0 20 20" fill="currentColor" style="width:12px;height:12px"><path fill-rule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-8-3a1 1 0 00-.867.5 1 1 0 11-1.731-1A3 3 0 0113 8a3.001 3.001 0 01-2 2.83V11a1 1 0 11-2 0v-1a1 1 0 011-1 1 1 0 100-2zm0 8a1 1 0 100-2 1 1 0 000 2z" clip-rule="evenodd"/></svg>
-                  AIアドバイス
-                </div>
+                  <span style="display:flex;align-items:center;gap:4px"><svg viewBox="0 0 20 20" fill="currentColor" style="width:12px;height:12px"><path fill-rule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-8-3a1 1 0 00-.867.5 1 1 0 11-1.731-1A3 3 0 0113 8a3.001 3.001 0 01-2 2.83V11a1 1 0 11-2 0v-1a1 1 0 011-1 1 1 0 100-2zm0 8a1 1 0 100-2 1 1 0 000 2z" clip-rule="evenodd"/></svg>AIアドバイス</span></div>
                 <div class="md-content">${markdownToHtml(entry.aiAdvice)}</div>
               </div>`
             : ""}
@@ -1289,15 +1318,17 @@ function interviewCardHtml(c, iv) {
     ? `<span class="chip chip-sm ${iv.result === "合格" ? "chip-offer" : iv.result === "不合格" ? "chip-reject" : "chip-neutral"}">${iv.result}</span>`
     : "";
 
+  const ivId = `iv-${iv.id}`;
   return `
-    <div class="interview-card" id="iv-${iv.id}">
+    <div class="interview-card${collapseState.has(ivId) ? " collapsed" : ""}" id="${ivId}">
       <div class="interview-card-header">
-        <div style="display:flex;align-items:center;gap:8px">
+        <div class="collapse-trigger" onclick="toggleSection('${ivId}')" style="display:flex;align-items:center;gap:8px;flex:1;min-width:0">
+          ${CHEV}
           <span class="interview-round-label">${escHtml(iv.type)}</span>
           ${resultChip}
+          ${iv.date ? `<span style="font-size:12px;color:var(--text-3)">${fmtDateFull(iv.date)}${iv.time ? " " + iv.time : ""}</span>` : ""}
         </div>
         <div style="display:flex;align-items:center;gap:6px">
-          ${iv.date ? `<span style="font-size:12px;color:var(--text-3)">${fmtDateFull(iv.date)}${iv.time ? " " + iv.time : ""}</span>` : ""}
           <button class="btn btn-ghost btn-sm" onclick="openEditInterviewModal('${c.id}','${iv.id}')">編集</button>
           <button class="btn btn-ghost btn-sm" onclick="deleteInterview('${c.id}','${iv.id}')">
             <svg viewBox="0 0 20 20" fill="currentColor" style="width:14px;height:14px"><path fill-rule="evenodd" d="M9 2a1 1 0 00-.894.553L7.382 4H4a1 1 0 000 2v10a2 2 0 002 2h8a2 2 0 002-2V6a1 1 0 100-2h-3.382l-.724-1.447A1 1 0 0011 2H9zM7 8a1 1 0 012 0v6a1 1 0 11-2 0V8zm5-1a1 1 0 00-1 1v6a1 1 0 102 0V8a1 1 0 00-1-1z" clip-rule="evenodd"/></svg>
@@ -1328,7 +1359,7 @@ function interviewCardHtml(c, iv) {
           <div id="iv-tips-${iv.id}">
             ${iv.aiTips
               ? `<div class="interview-tips-panel mt-3">
-                  <div style="font-size:11.5px;font-weight:700;color:var(--purple-text);text-transform:uppercase;letter-spacing:.5px;margin-bottom:8px">AI収集情報</div>
+                  <div class="panel-label" style="font-size:11.5px;font-weight:700;color:var(--purple-text);text-transform:uppercase;letter-spacing:.5px;margin-bottom:8px">AI収集情報</div>
                   <div class="md-content">${markdownToHtml(iv.aiTips)}</div>
                 </div>`
               : ""}
@@ -1361,7 +1392,7 @@ function interviewCardHtml(c, iv) {
           <div id="iv-fb-${iv.id}">
             ${iv.aiExperienceFeedback
               ? `<div class="interview-feedback-panel mt-3">
-                  <div style="font-size:11.5px;font-weight:700;color:var(--green-text);text-transform:uppercase;letter-spacing:.5px;margin-bottom:8px">AIフィードバック</div>
+                  <div class="panel-label" style="font-size:11.5px;font-weight:700;color:var(--green-text);text-transform:uppercase;letter-spacing:.5px;margin-bottom:8px">AIフィードバック</div>
                   <div class="md-content">${markdownToHtml(iv.aiExperienceFeedback)}</div>
                 </div>`
               : ""}
@@ -1549,7 +1580,7 @@ async function runInterviewTips(companyId, ivId) {
     if (el) {
       el.innerHTML = `
         <div class="interview-tips-panel mt-3">
-          <div style="font-size:11.5px;font-weight:700;color:var(--purple-text);text-transform:uppercase;letter-spacing:.5px;margin-bottom:8px">AI収集情報</div>
+          <div class="panel-label" style="font-size:11.5px;font-weight:700;color:var(--purple-text);text-transform:uppercase;letter-spacing:.5px;margin-bottom:8px">AI収集情報</div>
           <div class="md-content">${markdownToHtml(res.tips)}</div>
         </div>
       `;
@@ -1585,7 +1616,7 @@ async function runInterviewFeedback(companyId, ivId) {
     if (el) {
       el.innerHTML = `
         <div class="interview-feedback-panel mt-3">
-          <div style="font-size:11.5px;font-weight:700;color:var(--green-text);text-transform:uppercase;letter-spacing:.5px;margin-bottom:8px">AIフィードバック</div>
+          <div class="panel-label" style="font-size:11.5px;font-weight:700;color:var(--green-text);text-transform:uppercase;letter-spacing:.5px;margin-bottom:8px">AIフィードバック</div>
           <div class="md-content">${markdownToHtml(res.feedback)}</div>
         </div>
       `;
@@ -1607,9 +1638,12 @@ function renderIvQaList(c, iv) {
 function ivQaEntryHtml(c, iv, qa) {
   const charCount = (qa.answer || "").length;
   return `
-    <div class="es-entry" id="ivqa-${qa.id}" style="margin-bottom:12px">
+    <div class="es-entry${collapseState.has(`ivqa-${qa.id}`) ? " collapsed" : ""}" id="ivqa-${qa.id}" style="margin-bottom:12px">
       <div class="es-entry-header">
-        <div class="es-question-text" style="font-size:13px">${escHtml(qa.question)}</div>
+        <div class="collapse-trigger" onclick="toggleSection('ivqa-${qa.id}')" style="flex:1;min-width:0;display:flex;align-items:center;gap:6px">
+          ${CHEV}
+          <div class="es-question-text" style="font-size:13px">${escHtml(qa.question)}</div>
+        </div>
         <div style="display:flex;gap:4px;flex-shrink:0;flex-wrap:wrap;justify-content:flex-end">
           <button class="btn btn-ai btn-sm" onclick="runIvQaReview('${c.id}','${iv.id}','${qa.id}')">
             <svg viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M11.3 1.046A1 1 0 0112 2v5h4a1 1 0 01.82 1.573l-7 10A1 1 0 018 18v-5H4a1 1 0 01-.82-1.573l7-10a1 1 0 011.12-.38z" clip-rule="evenodd"/></svg>
@@ -2869,10 +2903,15 @@ function renderSettings() {
     </div>
     <div style="max-width:600px">
 
-      <div class="settings-section">
-        <div class="settings-section-header">
-          <div class="settings-section-title">自分のプロフィール</div>
-          <div class="settings-section-desc">ES添削・面接指導・AIツール全般でこの情報を参考にします</div>
+      <div class="settings-section${collapseState.has('ss-profile') ? ' collapsed' : ''}" id="ss-profile">
+        <div class="settings-section-header" onclick="toggleSection('ss-profile')" style="cursor:pointer;user-select:none">
+          <div style="display:flex;align-items:center;justify-content:space-between;gap:8px">
+            <div>
+              <div class="settings-section-title">自分のプロフィール</div>
+              <div class="settings-section-desc">ES添削・面接指導・AIツール全般でこの情報を参考にします</div>
+            </div>
+            ${CHEV}
+          </div>
         </div>
         <div class="settings-section-body">
           <div class="form-group">
@@ -2899,10 +2938,15 @@ function renderSettings() {
         </div>
       </div>
 
-      <div class="settings-section">
-        <div class="settings-section-header">
-          <div class="settings-section-title">AIサービス設定</div>
-          <div class="settings-section-desc">いずれか1つを設定すれば動作します（Gemini推奨）</div>
+      <div class="settings-section${collapseState.has('ss-ai') ? ' collapsed' : ''}" id="ss-ai">
+        <div class="settings-section-header" onclick="toggleSection('ss-ai')" style="cursor:pointer;user-select:none">
+          <div style="display:flex;align-items:center;justify-content:space-between;gap:8px">
+            <div>
+              <div class="settings-section-title">AIサービス設定</div>
+              <div class="settings-section-desc">いずれか1つを設定すれば動作します（Gemini推奨）</div>
+            </div>
+            ${CHEV}
+          </div>
         </div>
         <div class="settings-section-body">
           <div id="settings-ai-status" style="margin-bottom:12px">読み込み中...</div>
@@ -2923,9 +2967,12 @@ function renderSettings() {
         </div>
       </div>
 
-      <div class="settings-section">
-        <div class="settings-section-header">
-          <div class="settings-section-title">データ管理</div>
+      <div class="settings-section${collapseState.has('ss-data') ? ' collapsed' : ''}" id="ss-data">
+        <div class="settings-section-header" onclick="toggleSection('ss-data')" style="cursor:pointer;user-select:none">
+          <div style="display:flex;align-items:center;justify-content:space-between;gap:8px">
+            <div class="settings-section-title">データ管理</div>
+            ${CHEV}
+          </div>
         </div>
         <div class="settings-section-body">
 
@@ -2961,9 +3008,12 @@ function renderSettings() {
         </div>
       </div>
 
-      <div class="settings-section">
-        <div class="settings-section-header">
-          <div class="settings-section-title">このアプリについて</div>
+      <div class="settings-section${collapseState.has('ss-about') ? ' collapsed' : ''}" id="ss-about">
+        <div class="settings-section-header" onclick="toggleSection('ss-about')" style="cursor:pointer;user-select:none">
+          <div style="display:flex;align-items:center;justify-content:space-between;gap:8px">
+            <div class="settings-section-title">このアプリについて</div>
+            ${CHEV}
+          </div>
         </div>
         <div class="settings-section-body">
           <div style="font-size:13px;color:var(--text-2);line-height:1.8">
@@ -3153,6 +3203,12 @@ async function resetData() {
 
 /* ===== Init ===== */
 async function init() {
+  // AI result panel collapse via event delegation
+  document.addEventListener("click", e => {
+    if (e.target.closest("button, a[href], input, textarea, select")) return;
+    const label = e.target.closest(".es-review-label, .panel-label");
+    if (label) { label.parentElement.classList.toggle("collapsed"); }
+  });
   await loadData();
   handleRoute();
 }
