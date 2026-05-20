@@ -733,8 +733,34 @@ function updateCompanyField(id, field, value) {
 
 /* ===== ES Tab ===== */
 function renderEsTab(c) {
+  const meta = c.esMeta || {};
   return `
     <div style="max-width:720px">
+      <div class="card mb-4">
+        <div class="card-header">
+          <span class="card-title">ES対策情報</span>
+          <button class="btn btn-ai btn-sm" onclick="runEsStrategy('${c.id}')">
+            <svg viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M11.3 1.046A1 1 0 0112 2v5h4a1 1 0 01.82 1.573l-7 10A1 1 0 018 18v-5H4a1 1 0 01-.82-1.573l7-10a1 1 0 011.12-.38z" clip-rule="evenodd"/></svg>
+            AIに調べてもらう
+          </button>
+        </div>
+        <div class="card-body">
+          <div id="es-strategy-${c.id}">
+            ${meta.aiStrategy
+              ? `<div class="ai-result md-content">${markdownToHtml(meta.aiStrategy)}</div>
+                 <div style="font-size:11px;color:var(--text-4);margin-top:8px">取得日: ${fmtDatetime(meta.aiStrategyUpdatedAt || "")}</div>`
+              : `<p class="text-muted" style="text-align:center;padding:16px 0">「AIに調べてもらう」を押すと、${escHtml(c.name)}のES選考情報・対策を調べます</p>`}
+          </div>
+        </div>
+      </div>
+
+      <div class="card mb-4">
+        <div class="card-header"><span class="card-title">自分のメモ</span></div>
+        <div class="card-body">
+          <textarea class="form-textarea" rows="4" onchange="updateEsMeta('${c.id}','notes',this.value)" placeholder="ES対策のメモ、参考にしたこと、気づきなど">${escHtml(meta.notes || "")}</textarea>
+        </div>
+      </div>
+
       <div style="display:flex;justify-content:flex-end;margin-bottom:14px">
         <button class="btn btn-primary" onclick="openAddEsModal('${c.id}')">
           <svg viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M10 5a1 1 0 011 1v3h3a1 1 0 110 2h-3v3a1 1 0 11-2 0v-3H6a1 1 0 110-2h3V6a1 1 0 011-1z" clip-rule="evenodd"/></svg>
@@ -758,10 +784,14 @@ function esEntryHtml(c, entry) {
     <div class="es-entry" id="es-${entry.id}">
       <div class="es-entry-header">
         <div class="es-question-text">${escHtml(entry.question)}</div>
-        <div style="display:flex;gap:6px;flex-shrink:0">
+        <div style="display:flex;gap:6px;flex-shrink:0;flex-wrap:wrap;justify-content:flex-end">
           <button class="btn btn-ai btn-sm" onclick="runEsReview('${c.id}','${entry.id}')">
             <svg viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M11.3 1.046A1 1 0 0112 2v5h4a1 1 0 01.82 1.573l-7 10A1 1 0 018 18v-5H4a1 1 0 01-.82-1.573l7-10a1 1 0 011.12-.38z" clip-rule="evenodd"/></svg>
             AI添削
+          </button>
+          <button class="btn btn-secondary btn-sm" onclick="runEsAdvice('${c.id}','${entry.id}')">
+            <svg viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-8-3a1 1 0 00-.867.5 1 1 0 11-1.731-1A3 3 0 0113 8a3.001 3.001 0 01-2 2.83V11a1 1 0 11-2 0v-1a1 1 0 011-1 1 1 0 100-2zm0 8a1 1 0 100-2 1 1 0 000 2z" clip-rule="evenodd"/></svg>
+            AIアドバイス
           </button>
           <button class="btn btn-ghost btn-sm" onclick="openEditEsModal('${c.id}','${entry.id}')">編集</button>
           <button class="btn btn-ghost btn-sm" onclick="deleteEs('${c.id}','${entry.id}')">
@@ -781,6 +811,15 @@ function esEntryHtml(c, entry) {
                   AI添削結果
                 </div>
                 <div class="md-content">${markdownToHtml(entry.aiReview)}</div>
+              </div>`
+            : ""}
+          ${entry.aiAdvice
+            ? `<div class="es-review-panel" style="border-color:var(--accent-2,#6366f1)20;background:var(--surface-2)">
+                <div class="es-review-label" style="color:var(--accent-2,#6366f1)">
+                  <svg viewBox="0 0 20 20" fill="currentColor" style="width:12px;height:12px"><path fill-rule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-8-3a1 1 0 00-.867.5 1 1 0 11-1.731-1A3 3 0 0113 8a3.001 3.001 0 01-2 2.83V11a1 1 0 11-2 0v-1a1 1 0 011-1 1 1 0 100-2zm0 8a1 1 0 100-2 1 1 0 000 2z" clip-rule="evenodd"/></svg>
+                  AIアドバイス
+                </div>
+                <div class="md-content">${markdownToHtml(entry.aiAdvice)}</div>
               </div>`
             : ""}
         </div>

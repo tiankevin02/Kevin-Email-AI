@@ -1621,6 +1621,155 @@ AIプロバイダー: Gemini=gemini, Anthropic/Claude=anthropic, OpenAI/GPT=open
       return;
     }
 
+    if (req.method === "POST" && url.pathname === "/api/jobs/ai/es-advice") {
+      const { companyName, question } = await parseBody(req);
+      if (!companyName || !question) { sendJson(res, 400, { error: "企業名・設問を入力してください。" }); return; }
+      const system = `あなたは${companyName}の人事採用担当AIです。
+まず${companyName}の企業理念・価値観・求める人材像をあなたの知識で整理し、書類選考の評価基準プロンプトを自分で作成してください。
+そのプロンプトを使って、応募者が以下の設問にどのような回答を書けばよいかアドバイスしてください。`;
+      const user = `【設問】${question}
+
+## ${companyName}の書類選考評価基準（自作プロンプト）
+（まず企業理念に基づく評価基準を箇条書きで）
+
+## この設問への回答アドバイス
+
+### 盛り込むべき要素
+- （企業理念に合った必須要素を3〜5点）
+
+### 構成案
+（結論→根拠→具体例の構成を提案）
+
+### 避けるべき表現・内容
+- （この企業に合わない内容）
+
+### 模範回答例（200字程度）
+（実際の回答例を提示）`;
+      const advice = await jobsAiChat(state, system, user);
+      sendJson(res, 200, { advice });
+      return;
+    }
+
+    if (req.method === "POST" && url.pathname === "/api/jobs/ai/es-strategy") {
+      const { companyName, esEntries } = await parseBody(req);
+      if (!companyName) { sendJson(res, 400, { error: "企業名を入力してください。" }); return; }
+      const system = "あなたは就職活動のESコーチです。企業のES選考情報と対策を詳しく提供します。";
+      const entriesInfo = (esEntries || []).length > 0
+        ? `\n\n【登録済み設問】\n${(esEntries || []).map((e, i) => `${i + 1}. ${e.question}`).join("\n")}`
+        : "";
+      const user = `${companyName}のES（エントリーシート）についてマークダウンでまとめてください。${entriesInfo}
+
+## ${companyName}のES対策情報
+
+### 企業理念・求める人物像
+（企業の特徴と重視するポイント）
+
+### ESでよく聞かれる設問傾向
+（この企業特有の設問テーマ）
+
+### 選考通過のコツ
+（重要なポイントと差別化戦略）
+
+### 使えるキーワード・表現
+（盛り込むと効果的な言葉）
+
+### 注意事項
+（避けるべき内容・よくある失敗）`;
+      const strategy = await jobsAiChat(state, system, user);
+      sendJson(res, 200, { strategy });
+      return;
+    }
+
+    if (req.method === "POST" && url.pathname === "/api/jobs/ai/iv-review") {
+      const { companyName, interviewType, question, answer } = await parseBody(req);
+      if (!companyName || !question || !answer) { sendJson(res, 400, { error: "企業名・設問・回答を入力してください。" }); return; }
+      const system = `あなたは${companyName}の人事採用担当AIです。
+まず${companyName}の企業理念・価値観・求める人材像をあなたの知識で整理し、面接選考の評価基準プロンプトを自分で作成してください。
+そのプロンプトを使って、以下の面接の設問と回答を評価・添削してください。`;
+      const user = `【面接種別】${interviewType || "面接"}
+【設問】${question}
+【回答】${answer}
+
+## ${companyName}の面接評価基準（自作プロンプト）
+（まず企業理念に基づく評価基準を箇条書きで）
+
+## 評価
+**良かった点**
+- （2〜3点、具体的に）
+
+**改善が必要な点**
+- （2〜3点、具体的に）
+
+## 添削後の回答例
+（改善版の回答を提示）
+
+## 総評
+（100字程度）`;
+      const review = await jobsAiChat(state, system, user);
+      sendJson(res, 200, { review });
+      return;
+    }
+
+    if (req.method === "POST" && url.pathname === "/api/jobs/ai/iv-advice") {
+      const { companyName, interviewType, question } = await parseBody(req);
+      if (!companyName || !question) { sendJson(res, 400, { error: "企業名・設問を入力してください。" }); return; }
+      const system = `あなたは${companyName}の人事採用担当AIです。
+まず${companyName}の企業理念・価値観・求める人材像をあなたの知識で整理し、面接選考の評価基準プロンプトを自分で作成してください。
+そのプロンプトを使って、応募者が以下の面接の設問にどのように答えればよいかアドバイスしてください。`;
+      const user = `【面接種別】${interviewType || "面接"}
+【設問】${question}
+
+## ${companyName}の面接評価基準（自作プロンプト）
+（まず企業理念に基づく評価基準を箇条書きで）
+
+## この設問への回答アドバイス
+
+### 盛り込むべき要素
+- （企業理念に合った必須要素を3〜5点）
+
+### 回答の構成
+（STAR法・結論先行などを使った構成を提案）
+
+### 避けるべき回答
+- （この企業に合わない内容や表現）
+
+### 模範回答例（200字程度）
+（実際の回答例を提示）`;
+      const advice = await jobsAiChat(state, system, user);
+      sendJson(res, 200, { advice });
+      return;
+    }
+
+    if (req.method === "POST" && url.pathname === "/api/jobs/ai/iv-strategy") {
+      const { companyName } = await parseBody(req);
+      if (!companyName) { sendJson(res, 400, { error: "企業名を入力してください。" }); return; }
+      const system = "あなたは就職活動の面接コーチです。企業の面接選考情報と対策を詳しく提供します。";
+      const user = `${companyName}の面接選考についてマークダウンでまとめてください。
+
+## ${companyName}の面接対策情報
+
+### 企業理念・求める人物像
+（企業の特徴と面接で重視するポイント）
+
+### 面接の流れ・選考ステップ
+（面接回数と各ステージの特徴）
+
+### よく聞かれる質問（10問程度）
+- （箇条書き）
+
+### 選考通過のコツ
+（この企業の面接を通過するための重要ポイント）
+
+### 逆質問例
+（好印象を与える逆質問を3〜5問）
+
+### 注意事項
+（避けるべき回答・よくある失敗）`;
+      const strategy = await jobsAiChat(state, system, user);
+      sendJson(res, 200, { strategy });
+      return;
+    }
+
     if (req.method === "POST" && url.pathname === "/api/jobs/ai/analysis") {
       const { companies, schedules } = await parseBody(req);
       const byStatus = {};
