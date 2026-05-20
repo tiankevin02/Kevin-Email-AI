@@ -47,10 +47,6 @@ let filterStatus = "all";
 let filterSelectionType = "all";
 let filterIndustry = "all";
 let searchQuery = "";
-let _lpTimer = null;
-let _lpFired = false;
-let _lpScrolled = false;
-let _lpStartY = 0;
 let saveTimer = null;
 const collapseState = new Set();
 function toggleSection(id) {
@@ -519,17 +515,10 @@ function renderDashboard() {
                     ? `<span onclick="copyCompanyLoginId('${c.id}')" title="タップでコピー" style="font-size:11px;color:var(--accent);cursor:pointer;font-family:monospace;background:var(--bg-hover);padding:2px 6px;border-radius:5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;display:block">${escHtml(c.mypageId)}</span>`
                     : ""}
                   ${c.mypageUrl
-                    ? `<button
-                        onmousedown="mypagePressStart(event,'${c.id}')"
-                        onmouseup="mypagePressEnd(event,'${c.id}')"
-                        ontouchstart="mypagePressStart(event,'${c.id}')"
-                        ontouchmove="mypagePressMove(event)"
-                        ontouchend="mypagePressEnd(event,'${c.id}')"
-                        onmouseleave="mypagePressCancel()"
-                        class="btn btn-secondary btn-sm"
-                        title="タップで開く・長押しでメニュー"
-                        style="width:100%;padding:4px 8px;font-size:11px;margin-top:auto"
-                      >開く</button>`
+                    ? `<div style="display:flex;gap:5px;margin-top:auto">
+                        <a href="${escHtml(c.mypageUrl)}" target="_blank" rel="noopener" class="btn btn-secondary btn-sm" style="flex:1;text-align:center;padding:4px 6px;font-size:11px">開く</a>
+                        <button onclick="copyMypageUrl('${c.id}')" class="btn btn-secondary btn-sm" style="flex:1;padding:4px 6px;font-size:11px">コピー</button>
+                      </div>`
                     : ""}
                 </div>`).join("")}
             </div>
@@ -670,65 +659,10 @@ function setIndustryFilter(val) {
   renderCompanies();
 }
 
-/* ===== Mypage long-press actions ===== */
-function mypagePressStart(e, cid) {
-  _lpFired = false;
-  _lpScrolled = false;
-  _lpStartY = e.touches ? e.touches[0].clientY : 0;
-  _lpTimer = setTimeout(() => {
-    _lpFired = true;
-    showMypageMenu(cid);
-  }, 600);
-}
-
-function mypagePressMove(e) {
-  if (!_lpTimer) return;
-  const dy = e.touches ? Math.abs(e.touches[0].clientY - _lpStartY) : 0;
-  if (dy > 8) { _lpScrolled = true; mypagePressCancel(); }
-}
-
-function mypagePressEnd(e, cid) {
-  if (_lpTimer) { clearTimeout(_lpTimer); _lpTimer = null; }
-  if (!_lpFired && !_lpScrolled) {
-    const c = getCompany(cid);
-    if (c?.mypageUrl) window.open(c.mypageUrl, "_blank", "noopener");
-  }
-  _lpFired = false;
-  _lpScrolled = false;
-}
-
-function mypagePressCancel() {
-  if (_lpTimer) { clearTimeout(_lpTimer); _lpTimer = null; }
-}
-
-function showMypageMenu(cid) {
-  document.getElementById("mypage-menu")?.remove();
-  const c = getCompany(cid);
-  if (!c?.mypageUrl) return;
-  const menu = document.createElement("div");
-  menu.id = "mypage-menu";
-  menu.innerHTML = `
-    <div style="position:fixed;inset:0;z-index:1000" onclick="document.getElementById('mypage-menu').remove()"></div>
-    <div style="position:fixed;bottom:0;left:0;right:0;z-index:1001;background:var(--bg-card);border-radius:16px 16px 0 0;padding:20px 16px 32px;box-shadow:0 -4px 24px rgba(0,0,0,.18)">
-      <div style="font-size:13px;font-weight:700;margin-bottom:3px">${escHtml(c.name)}</div>
-      <div style="font-size:11px;color:var(--text-3);margin-bottom:18px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escHtml(c.mypageUrl)}</div>
-      <button class="btn btn-primary" style="width:100%;margin-bottom:10px" onclick="openMypageFromMenu('${cid}')">開く</button>
-      <button class="btn btn-secondary" style="width:100%" onclick="copyMypageFromMenu('${cid}')">URLをコピー</button>
-    </div>
-  `;
-  document.body.appendChild(menu);
-}
-
-function openMypageFromMenu(cid) {
-  const c = getCompany(cid);
-  if (c?.mypageUrl) window.open(c.mypageUrl, "_blank", "noopener");
-  document.getElementById("mypage-menu")?.remove();
-}
-
-function copyMypageFromMenu(cid) {
+/* ===== Mypage actions ===== */
+function copyMypageUrl(cid) {
   const c = getCompany(cid);
   if (c?.mypageUrl) { navigator.clipboard.writeText(c.mypageUrl); toast("URLをコピーしました"); }
-  document.getElementById("mypage-menu")?.remove();
 }
 
 function copyCompanyLoginId(cid) {
