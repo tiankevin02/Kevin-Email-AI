@@ -29,7 +29,7 @@ const INTERVIEW_RESULTS = ["合格", "不合格", "結果待ち"];
 const SELECTION_TYPES = ["インターン", "本選考"];
 
 /* ===== State ===== */
-let state = { companies: [], schedules: [] };
+let state = { companies: [], schedules: [], profile: { gakuchika: "", selfPr: "", motivation: "", skills: "", other: "" } };
 let currentView = "dashboard";
 let currentCompanyId = null;
 let currentCompanyTab = "overview";
@@ -155,6 +155,17 @@ async function fetchJson(path, opts = {}) {
 const STORAGE_KEY = "shukatsu-ai-v1";
 const BACKUP_KEY  = "shukatsu-ai-backup";
 
+function getProfilePayload() {
+  return state.profile || {};
+}
+
+function aiPost(endpoint, params) {
+  return fetchJson(endpoint, {
+    method: "POST",
+    body: JSON.stringify({ ...params, userProfile: getProfilePayload() }),
+  });
+}
+
 /* データを安全に読む */
 function _readStorage(key) {
   try { return JSON.parse(localStorage.getItem(key) || "{}"); } catch { return {}; }
@@ -177,6 +188,7 @@ async function loadData() {
     state.companies = main.companies;
     state.schedules = main.schedules || [];
   }
+  if (main.profile) state.profile = { ...state.profile, ...main.profile };
 
   // ② メインが空ならバックアップから復元
   if (state.companies.length === 0) {
@@ -184,6 +196,7 @@ async function loadData() {
     if ((backup.companies || []).length > 0) {
       state.companies = backup.companies;
       state.schedules = backup.schedules || [];
+      if (backup.profile) state.profile = { ...state.profile, ...backup.profile };
       _writeStorage({ ...backup, updatedAt: backup.updatedAt || Date.now() });
       toast("バックアップからデータを復元しました", 4000);
     }
@@ -198,12 +211,11 @@ async function loadData() {
     const localHas  = state.companies.length > 0;
 
     if (serverHas && serverTs >= localTs) {
-      // サーバーが新しい → 使用
       state.companies = data.companies;
       state.schedules = data.schedules || [];
-      _writeStorage({ companies: state.companies, schedules: state.schedules, updatedAt: serverTs });
+      if (data.profile) state.profile = { ...state.profile, ...data.profile };
+      _writeStorage({ companies: state.companies, schedules: state.schedules, profile: state.profile, updatedAt: serverTs });
     } else if (localHas) {
-      // ローカルが新しい or サーバーが空 → サーバーへプッシュ
       await _pushToServer();
     }
   } catch {}
@@ -218,13 +230,12 @@ async function _pushToServer() {
   const updatedAt = Date.now();
   await fetchJson("/api/jobs", {
     method: "POST",
-    body: JSON.stringify({ companies: state.companies, schedules: state.schedules, updatedAt }),
+    body: JSON.stringify({ companies: state.companies, schedules: state.schedules, profile: state.profile, updatedAt }),
   });
   return updatedAt;
 }
 
 async function saveData() {
-  // 既存データより少なくなる場合は保存しない（誤消去防止）
   const existing = _readStorage(STORAGE_KEY);
   const existingCount = (existing.companies || []).length;
   if (existingCount > 0 && state.companies.length === 0) {
@@ -234,9 +245,9 @@ async function saveData() {
 
   try {
     const updatedAt = await _pushToServer();
-    _writeStorage({ companies: state.companies, schedules: state.schedules, updatedAt });
+    _writeStorage({ companies: state.companies, schedules: state.schedules, profile: state.profile, updatedAt });
   } catch {
-    _writeStorage({ companies: state.companies, schedules: state.schedules, updatedAt: Date.now() });
+    _writeStorage({ companies: state.companies, schedules: state.schedules, profile: state.profile, updatedAt: Date.now() });
     toast("オフライン保存しました（次回オンライン時に同期されます）", 3000);
   }
 }
@@ -1050,10 +1061,7 @@ async function runEsReview(companyId, esId) {
   if (reviewEl) reviewEl.innerHTML = `<div class="ai-loading"><div class="spinner"></div>AIが添削中...</div>`;
 
   try {
-    const res = await fetchJson("/api/jobs/ai/es-review", {
-      method: "POST",
-      body: JSON.stringify({ companyName: c.name, question: entry.question, answer: entry.answer }),
-    });
+    const res = await aiPost("/api/jobs/ai/es-review", { companyName: c.name, question: entry.question, answer: entry.answer });
     entry.aiReview = res.review;
     entry.updatedAt = now();
     c.updatedAt = now();
@@ -1083,10 +1091,7 @@ async function runEsStrategy(companyId) {
   const el = document.getElementById(`es-strategy-${companyId}`);
   if (el) el.innerHTML = `<div class="ai-loading"><div class="spinner"></div>AIが調査中...</div>`;
   try {
-    const res = await fetchJson("/api/jobs/ai/es-strategy", {
-      method: "POST",
-      body: JSON.stringify({ companyName: c.name, esEntries: (c.es || []).map(e => ({ question: e.question })) }),
-    });
+    const res = await aiPost("/api/jobs/ai/es-strategy", { companyName: c.name, esEntries: (c.es || []).map(e => ({ question: e.question })) });
     c.esMeta = c.esMeta || {};
     c.esMeta.aiStrategy = res.strategy;
     c.esMeta.aiStrategyUpdatedAt = now();
@@ -1108,10 +1113,7 @@ async function runEsAdvice(companyId, esId) {
   const reviewEl = document.getElementById(`es-review-${esId}`);
   if (reviewEl) reviewEl.innerHTML = `<div class="ai-loading"><div class="spinner"></div>AIがアドバイス作成中...</div>`;
   try {
-    const res = await fetchJson("/api/jobs/ai/es-advice", {
-      method: "POST",
-      body: JSON.stringify({ companyName: c.name, question: entry.question }),
-    });
+    const res = await aiPost("/api/jobs/ai/es-advice", { companyName: c.name, question: entry.question });
     entry.aiAdvice = res.advice;
     entry.updatedAt = now();
     c.updatedAt = now();
@@ -1193,10 +1195,7 @@ async function runWebtestInfo(companyId) {
   if (infoEl) infoEl.innerHTML = `<div class="ai-loading"><div class="spinner"></div>AIが調査中...</div>`;
 
   try {
-    const res = await fetchJson("/api/jobs/ai/webtest", {
-      method: "POST",
-      body: JSON.stringify({ companyName: c.name }),
-    });
+    const res = await aiPost("/api/jobs/ai/webtest", { companyName: c.name });
     c.webTest = c.webTest || {};
     c.webTest.aiInfo = res.info;
     c.webTest.aiInfoUpdatedAt = now();
@@ -1517,10 +1516,7 @@ async function runInterviewTips(companyId, ivId) {
   if (el) el.innerHTML = `<div class="ai-loading mt-3"><div class="spinner"></div>AIが情報収集中...</div>`;
 
   try {
-    const res = await fetchJson("/api/jobs/ai/interview-tips", {
-      method: "POST",
-      body: JSON.stringify({ companyName: c.name, interviewType: iv.type }),
-    });
+    const res = await aiPost("/api/jobs/ai/interview-tips", { companyName: c.name, interviewType: iv.type });
     iv.aiTips = res.tips;
     iv.updatedAt = now();
     c.updatedAt = now();
@@ -1551,15 +1547,12 @@ async function runInterviewFeedback(companyId, ivId) {
   if (el) el.innerHTML = `<div class="ai-loading mt-3"><div class="spinner"></div>AIがフィードバック作成中...</div>`;
 
   try {
-    const res = await fetchJson("/api/jobs/ai/interview-feedback", {
-      method: "POST",
-      body: JSON.stringify({
+    const res = await aiPost("/api/jobs/ai/interview-feedback", {
         companyName: c.name,
         interviewType: iv.type,
         experience: iv.experience,
         questionsAsked: iv.questionsAsked,
-      }),
-    });
+      });
     iv.aiExperienceFeedback = res.feedback;
     iv.updatedAt = now();
     c.updatedAt = now();
@@ -1625,10 +1618,7 @@ async function runIvStrategy(companyId) {
   const el = document.getElementById(`iv-strategy-${companyId}`);
   if (el) el.innerHTML = `<div class="ai-loading"><div class="spinner"></div>AIが調査中...</div>`;
   try {
-    const res = await fetchJson("/api/jobs/ai/iv-strategy", {
-      method: "POST",
-      body: JSON.stringify({ companyName: c.name }),
-    });
+    const res = await aiPost("/api/jobs/ai/iv-strategy", { companyName: c.name });
     c.ivMeta = c.ivMeta || {};
     c.ivMeta.aiStrategy = res.strategy;
     c.ivMeta.aiStrategyUpdatedAt = now();
@@ -1727,10 +1717,7 @@ async function runIvQaReview(companyId, ivId, qaId) {
   const el = document.getElementById(`ivqa-review-${qaId}`);
   if (el) el.innerHTML = `<div class="ai-loading"><div class="spinner"></div>AIが添削中...</div>`;
   try {
-    const res = await fetchJson("/api/jobs/ai/iv-review", {
-      method: "POST",
-      body: JSON.stringify({ companyName: c.name, interviewType: iv.type, question: qa.question, answer: qa.answer }),
-    });
+    const res = await aiPost("/api/jobs/ai/iv-review", { companyName: c.name, interviewType: iv.type, question: qa.question, answer: qa.answer });
     qa.aiReview = res.review;
     qa.updatedAt = now();
     c.updatedAt = now();
@@ -1751,10 +1738,7 @@ async function runIvQaAdvice(companyId, ivId, qaId) {
   const el = document.getElementById(`ivqa-review-${qaId}`);
   if (el) el.innerHTML = `<div class="ai-loading"><div class="spinner"></div>AIがアドバイス作成中...</div>`;
   try {
-    const res = await fetchJson("/api/jobs/ai/iv-advice", {
-      method: "POST",
-      body: JSON.stringify({ companyName: c.name, interviewType: iv.type, question: qa.question }),
-    });
+    const res = await aiPost("/api/jobs/ai/iv-advice", { companyName: c.name, interviewType: iv.type, question: qa.question });
     qa.aiAdvice = res.advice;
     qa.updatedAt = now();
     c.updatedAt = now();
@@ -1886,10 +1870,7 @@ async function generateApplicationEmail(companyId) {
   const el = document.getElementById(`email-result-${companyId}`);
   if (el) el.innerHTML = `<div class="ai-loading"><div class="spinner"></div>メール生成中...</div>`;
   try {
-    const res = await fetchJson("/api/jobs/ai/generate-email", {
-      method: "POST",
-      body: JSON.stringify({ companyName: c.name, industry: c.industry, selectionType: c.selectionType || "インターン", emailType, selfPr, status: c.status }),
-    });
+    const res = await aiPost("/api/jobs/ai/generate-email", { companyName: c.name, industry: c.industry, selectionType: c.selectionType || "インターン", emailType, selfPr, status: c.status });
     if (el) el.innerHTML = `
       <div class="ai-result">
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
@@ -1914,10 +1895,7 @@ async function scanJobInfo(companyId) {
   const el = document.getElementById(`jobscan-result-${companyId}`);
   if (el) el.innerHTML = `<div class="ai-loading"><div class="spinner"></div>求人情報を解析中...</div>`;
   try {
-    const res = await fetchJson("/api/jobs/ai/scan-job", {
-      method: "POST",
-      body: JSON.stringify({ companyName: c.name, jobUrl, jobText }),
-    });
+    const res = await aiPost("/api/jobs/ai/scan-job", { companyName: c.name, jobUrl, jobText });
     c.jobScanResult = res.result;
     c.updatedAt = now();
     scheduleSave();
@@ -1938,14 +1916,11 @@ async function optimizeSelfPr(companyId) {
   const el = document.getElementById(`selfpr-result-${companyId}`);
   if (el) el.innerHTML = `<div class="ai-loading"><div class="spinner"></div>最適化中...</div>`;
   try {
-    const res = await fetchJson("/api/jobs/ai/optimize-selfpr", {
-      method: "POST",
-      body: JSON.stringify({ companyName: c.name, industry: c.industry, selectionType: c.selectionType || "インターン", basePr, esEntries: (c.es || []).map(e => ({ question: e.question, answer: e.answer })) }),
-    });
+    const res = await aiPost("/api/jobs/ai/optimize-selfpr", { companyName: c.name, industry: c.industry, selectionType: c.selectionType || "インターン", basePr, esEntries: (c.es || []).map(e => ({ question: e.question, answer: e.answer })) });
     c.optimizedSelfPr = res.optimized;
     c.updatedAt = now();
     scheduleSave();
-    if (el) el.innerHTML = `
+  if (el) el.innerHTML = `
       <div class="ai-result">
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
           <div style="font-size:11.5px;font-weight:700;color:var(--accent)">最適化された自己PR</div>
@@ -1966,17 +1941,7 @@ async function runGapAnalysis(companyId) {
   const el = document.getElementById(`gap-result-${companyId}`);
   if (el) el.innerHTML = `<div class="ai-loading"><div class="spinner"></div>ギャップ分析中...</div>`;
   try {
-    const res = await fetchJson("/api/jobs/ai/gap-analysis", {
-      method: "POST",
-      body: JSON.stringify({
-        companyName: c.name,
-        industry: c.industry,
-        selectionType: c.selectionType || "インターン",
-        esEntries: (c.es || []).map(e => ({ question: e.question, answer: e.answer })),
-        selfPr: c.baseSelfPr || "",
-        notes: c.notes || "",
-      }),
-    });
+    const res = await aiPost("/api/jobs/ai/gap-analysis", { companyName: c.name, industry: c.industry, selectionType: c.selectionType || "インターン", esEntries: (c.es || []).map(e => ({ question: e.question, answer: e.answer })), selfPr: c.baseSelfPr || "", notes: c.notes || "" });
     c.gapAnalysis = res.analysis;
     c.updatedAt = now();
     scheduleSave();
@@ -1994,10 +1959,7 @@ async function startMockInterview(companyId, interviewType) {
   const el = document.getElementById(`mock-interview-${companyId}`);
   if (el) el.innerHTML = `<div class="ai-loading"><div class="spinner"></div>面接官を準備中...</div>`;
   try {
-    const res = await fetchJson("/api/jobs/ai/mock-interview-start", {
-      method: "POST",
-      body: JSON.stringify({ companyName: c.name, interviewType }),
-    });
+    const res = await aiPost("/api/jobs/ai/mock-interview-start", { companyName: c.name, interviewType });
     if (el) el.innerHTML = renderMockInterviewUI(companyId, interviewType, res.question, res.context, []);
   } catch (e) {
     if (el) el.innerHTML = `<div style="color:var(--red);font-size:13px">${escHtml(e.message)}</div>`;
@@ -2051,10 +2013,7 @@ async function submitMockAnswer(companyId, interviewType, question, history, con
   const el = document.getElementById(`mock-interview-${companyId}`);
   if (el) el.innerHTML = `<div class="ai-loading"><div class="spinner"></div>AIが評価中...</div>`;
   try {
-    const res = await fetchJson("/api/jobs/ai/mock-interview-next", {
-      method: "POST",
-      body: JSON.stringify({ companyName: c.name, interviewType, question, answer, history, context }),
-    });
+    const res = await aiPost("/api/jobs/ai/mock-interview-next", { companyName: c.name, interviewType, question, answer, history, context });
     const newHistory = [...history, { q: question, a: answer, feedback: res.feedback }];
     if (el) el.innerHTML = renderMockInterviewUI(companyId, interviewType, res.nextQuestion, context, newHistory);
     setTimeout(() => {
@@ -2488,10 +2447,7 @@ async function aitoolsGenerateEmail(companyId) {
   const el = document.getElementById("aitools-email-result");
   if (el) el.innerHTML = `<div class="ai-loading"><div class="spinner"></div>メール生成中...</div>`;
   try {
-    const res = await fetchJson("/api/jobs/ai/generate-email", {
-      method: "POST",
-      body: JSON.stringify({ companyName: c.name, industry: c.industry, selectionType: c.selectionType || "インターン", emailType, selfPr, status: c.status }),
-    });
+    const res = await aiPost("/api/jobs/ai/generate-email", { companyName: c.name, industry: c.industry, selectionType: c.selectionType || "インターン", emailType, selfPr, status: c.status });
     if (el) el.innerHTML = `<div class="ai-result"><div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px"><div style="font-size:11.5px;font-weight:700;color:var(--accent)">生成されたメール</div><button class="btn btn-secondary btn-sm" onclick="copyText(document.getElementById('aitools-email-text').textContent)">コピー</button></div><pre id="aitools-email-text" style="white-space:pre-wrap;font-size:13px;line-height:1.7;background:var(--bg);padding:12px;border-radius:8px;border:1px solid var(--border)">${escHtml(res.email)}</pre></div>`;
     toast("メールを生成しました");
   } catch (e) {
@@ -2509,10 +2465,7 @@ async function aitoolsScanJob(companyId) {
   const el = document.getElementById("aitools-scan-result");
   if (el) el.innerHTML = `<div class="ai-loading"><div class="spinner"></div>求人情報を解析中...</div>`;
   try {
-    const res = await fetchJson("/api/jobs/ai/scan-job", {
-      method: "POST",
-      body: JSON.stringify({ companyName: c.name, jobUrl, jobText }),
-    });
+    const res = await aiPost("/api/jobs/ai/scan-job", { companyName: c.name, jobUrl, jobText });
     c.jobScanResult = res.result;
     c.updatedAt = now();
     scheduleSave();
@@ -2533,14 +2486,11 @@ async function aitoolsOptimizeSelfPr(companyId) {
   const el = document.getElementById("aitools-selfpr-result");
   if (el) el.innerHTML = `<div class="ai-loading"><div class="spinner"></div>最適化中...</div>`;
   try {
-    const res = await fetchJson("/api/jobs/ai/optimize-selfpr", {
-      method: "POST",
-      body: JSON.stringify({ companyName: c.name, industry: c.industry, selectionType: c.selectionType || "インターン", basePr, esEntries: (c.es || []).map(e => ({ question: e.question, answer: e.answer })) }),
-    });
+    const res = await aiPost("/api/jobs/ai/optimize-selfpr", { companyName: c.name, industry: c.industry, selectionType: c.selectionType || "インターン", basePr, esEntries: (c.es || []).map(e => ({ question: e.question, answer: e.answer })) });
     c.optimizedSelfPr = res.optimized;
     c.updatedAt = now();
     scheduleSave();
-    if (el) el.innerHTML = `<div class="ai-result"><div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px"><div style="font-size:11.5px;font-weight:700;color:var(--accent)">最適化された自己PR</div><button class="btn btn-secondary btn-sm" onclick="copyText(document.getElementById('aitools-selfpr-out').textContent)">コピー</button></div><div id="aitools-selfpr-out" class="md-content">${markdownToHtml(res.optimized)}</div></div>`;
+  if (el) el.innerHTML = `<div class="ai-result"><div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px"><div style="font-size:11.5px;font-weight:700;color:var(--accent)">最適化された自己PR</div><button class="btn btn-secondary btn-sm" onclick="copyText(document.getElementById('aitools-selfpr-out').textContent)">コピー</button></div><div id="aitools-selfpr-out" class="md-content">${markdownToHtml(res.optimized)}</div></div>`;
     toast("自己PRを最適化しました");
   } catch (e) {
     if (el) el.innerHTML = `<div style="color:var(--red);font-size:13px">${escHtml(e.message)}</div>`;
@@ -2554,10 +2504,7 @@ async function aitoolsGapAnalysis(companyId) {
   const el = document.getElementById("aitools-gap-result");
   if (el) el.innerHTML = `<div class="ai-loading"><div class="spinner"></div>ギャップ分析中...</div>`;
   try {
-    const res = await fetchJson("/api/jobs/ai/gap-analysis", {
-      method: "POST",
-      body: JSON.stringify({ companyName: c.name, industry: c.industry, selectionType: c.selectionType || "インターン", esEntries: (c.es || []).map(e => ({ question: e.question, answer: e.answer })), selfPr: c.baseSelfPr || "", notes: c.notes || "" }),
-    });
+    const res = await aiPost("/api/jobs/ai/gap-analysis", { companyName: c.name, industry: c.industry, selectionType: c.selectionType || "インターン", esEntries: (c.es || []).map(e => ({ question: e.question, answer: e.answer })), selfPr: c.baseSelfPr || "", notes: c.notes || "" });
     c.gapAnalysis = res.analysis;
     c.updatedAt = now();
     scheduleSave();
@@ -2575,10 +2522,7 @@ async function aitoolsMockInterview(companyId, interviewType) {
   const el = document.getElementById("aitools-mock-result");
   if (el) el.innerHTML = `<div class="ai-loading"><div class="spinner"></div>面接官を準備中...</div>`;
   try {
-    const res = await fetchJson("/api/jobs/ai/mock-interview-start", {
-      method: "POST",
-      body: JSON.stringify({ companyName: c.name, interviewType }),
-    });
+    const res = await aiPost("/api/jobs/ai/mock-interview-start", { companyName: c.name, interviewType });
     if (el) el.innerHTML = renderAitoolsMockUI(companyId, interviewType, res.question, res.context, []);
   } catch (e) {
     if (el) el.innerHTML = `<div style="color:var(--red);font-size:13px">${escHtml(e.message)}</div>`;
@@ -2630,10 +2574,7 @@ async function aitoolsSubmitMock(companyId, interviewType, question, context, hi
   const el = document.getElementById("aitools-mock-result");
   if (el) el.innerHTML = `<div class="ai-loading"><div class="spinner"></div>AIが評価中...</div>`;
   try {
-    const res = await fetchJson("/api/jobs/ai/mock-interview-next", {
-      method: "POST",
-      body: JSON.stringify({ companyName: c.name, interviewType, question, answer, history, context }),
-    });
+    const res = await aiPost("/api/jobs/ai/mock-interview-next", { companyName: c.name, interviewType, question, answer, history, context });
     const newHistory = [...(Array.isArray(history) ? history : []), { q: question, a: answer, feedback: res.feedback }];
     if (el) el.innerHTML = renderAitoolsMockUI(companyId, interviewType, res.nextQuestion, context, newHistory);
     setTimeout(() => {
@@ -2712,10 +2653,7 @@ async function runAnalysis() {
   }
 
   try {
-    const res = await fetchJson("/api/jobs/ai/analysis", {
-      method: "POST",
-      body: JSON.stringify({ companies: state.companies, schedules: state.schedules }),
-    });
+    const res = await aiPost("/api/jobs/ai/analysis", { companies: state.companies, schedules: state.schedules });
     if (resultEl) {
       resultEl.innerHTML = `
         <div class="card mb-4">
@@ -2752,6 +2690,36 @@ function renderSettings() {
       </div>
     </div>
     <div style="max-width:600px">
+
+      <div class="settings-section">
+        <div class="settings-section-header">
+          <div class="settings-section-title">自分のプロフィール</div>
+          <div class="settings-section-desc">ES添削・面接指導・AIツール全般でこの情報を参考にします</div>
+        </div>
+        <div class="settings-section-body">
+          <div class="form-group">
+            <label class="form-label">ガクチカ（学生時代に力を入れたこと）</label>
+            <textarea class="form-input" id="profile-gakuchika" rows="4" placeholder="例：大学2年から始めたバドミントンサークルの運営で、部員30名のスケジュール調整とイベント企画を担当。参加率を40%改善しました。" style="resize:vertical">${escHtml(state.profile.gakuchika || "")}</textarea>
+          </div>
+          <div class="form-group">
+            <label class="form-label">自己PR</label>
+            <textarea class="form-input" id="profile-selfpr" rows="4" placeholder="例：私の強みは課題発見力です。アルバイト先でデータ分析を行い、売上を15%改善した経験があります。" style="resize:vertical">${escHtml(state.profile.selfPr || "")}</textarea>
+          </div>
+          <div class="form-group">
+            <label class="form-label">志望動機の軸</label>
+            <textarea class="form-input" id="profile-motivation" rows="3" placeholder="例：「人の課題をテクノロジーで解決する」という軸で就活中。DXや新規事業に携われる環境を重視。" style="resize:vertical">${escHtml(state.profile.motivation || "")}</textarea>
+          </div>
+          <div class="form-group">
+            <label class="form-label">スキル・資格・経験</label>
+            <textarea class="form-input" id="profile-skills" rows="3" placeholder="例：TOEIC 820点、Python（機械学習）、簿記2級、インターン経験（マーケティング6ヶ月）" style="resize:vertical">${escHtml(state.profile.skills || "")}</textarea>
+          </div>
+          <div class="form-group">
+            <label class="form-label">その他（AIに知っておいてほしいこと）</label>
+            <textarea class="form-input" id="profile-other" rows="3" placeholder="例：文系出身だがプログラミングを独学。体育会系の部活経験あり。大学院進学も検討中。" style="resize:vertical">${escHtml(state.profile.other || "")}</textarea>
+          </div>
+          <button class="btn btn-primary" onclick="saveProfile()">プロフィールを保存</button>
+        </div>
+      </div>
 
       <div class="settings-section">
         <div class="settings-section-header">
@@ -2838,6 +2806,18 @@ function renderSettings() {
     }
   }
   checkDataStatus();
+}
+
+function saveProfile() {
+  state.profile = {
+    gakuchika:  document.getElementById("profile-gakuchika")?.value.trim()  || "",
+    selfPr:     document.getElementById("profile-selfpr")?.value.trim()     || "",
+    motivation: document.getElementById("profile-motivation")?.value.trim() || "",
+    skills:     document.getElementById("profile-skills")?.value.trim()     || "",
+    other:      document.getElementById("profile-other")?.value.trim()      || "",
+  };
+  saveData();
+  toast("プロフィールを保存しました");
 }
 
 function checkDataStatus() {
