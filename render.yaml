@@ -30,5 +30,7 @@ services:
         sync: false
       - key: GEMINI_MODEL
         value: gemini-3.1-flash-lite
+      - key: GEMINI_FALLBACK_MODEL
+        value: gemini-2.5-flash
       - key: GROK_API_KEY
         sync: false

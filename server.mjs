@@ -326,8 +326,24 @@ function openAIConfig(state) {
 function geminiConfig(state) {
   return {
     key: env.GEMINI_API_KEY || state.config.geminiApiKey,
-    model: env.GEMINI_MODEL || state.config.geminiModel || "gemini-2.5-flash"
+    model: env.GEMINI_MODEL || state.config.geminiModel || "gemini-2.5-flash",
+    fallbackModel: env.GEMINI_FALLBACK_MODEL || "gemini-2.5-flash"
   };
+}
+
+function isGeminiQuotaError(status, body) {
+  if (status === 429) return true;
+  const msg = (body?.error?.message || body?.error?.status || "").toLowerCase();
+  return msg.includes("resource_exhausted") || msg.includes("quota") || msg.includes("rate limit");
+}
+
+async function callGeminiApi(key, model, requestBody) {
+  const response = await fetch(
+    `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${key}`,
+    { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(requestBody) }
+  );
+  const body = await response.json();
+  return { ok: response.ok, status: response.status, body };
 }
 
 function grokConfig(state) {
@@ -398,20 +414,17 @@ async function tryProviderChat(provider, state, messages, temperature) {
       const contents = messages
         .filter((m) => m.role !== "system")
         .map((m) => ({ role: m.role === "assistant" ? "model" : "user", parts: [{ text: m.content }] }));
-      const response = await fetch(
-        `https://generativelanguage.googleapis.com/v1beta/models/${config.model}:generateContent?key=${config.key}`,
-        {
-          method: "POST",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify({
-            ...(system ? { systemInstruction: { parts: [{ text: system }] } } : {}),
-            contents,
-            generationConfig: { temperature, maxOutputTokens: 4096 }
-          })
-        }
-      );
-      const body = await response.json();
-      return response.ok ? (body.candidates?.[0]?.content?.parts?.[0]?.text?.trim() || "") : null;
+      const reqBody = {
+        ...(system ? { systemInstruction: { parts: [{ text: system }] } } : {}),
+        contents,
+        generationConfig: { temperature, maxOutputTokens: 4096 }
+      };
+      let { ok, status, body } = await callGeminiApi(config.key, config.model, reqBody);
+      if (!ok && isGeminiQuotaError(status, body) && config.fallbackModel !== config.model) {
+        console.log(`Gemini quota exceeded on ${config.model}, falling back to ${config.fallbackModel}`);
+        ({ ok, body } = await callGeminiApi(config.key, config.fallbackModel, reqBody));
+      }
+      return ok ? (body.candidates?.[0]?.content?.parts?.[0]?.text?.trim() || "") : null;
     }
     case "anthropic": {
       if (!configuredAnthropic(state)) return null;
@@ -504,13 +517,13 @@ async function quizAiWithImages(state, systemPrompt, userText, imgList) {
         const config = geminiConfig(state);
         const parts = imgList.map(img => ({ inline_data: { mime_type: img.mime, data: img.base64 } }));
         parts.push({ text: userText });
-        const response = await fetch(
-          `https://generativelanguage.googleapis.com/v1beta/models/${config.model}:generateContent?key=${config.key}`,
-          { method: "POST", headers: { "content-type": "application/json" },
-            body: JSON.stringify({ systemInstruction: { parts: [{ text: systemPrompt }] }, contents: [{ role: "user", parts }], generationConfig: { temperature: 0.3, maxOutputTokens: 4096 } }) }
-        );
-        const body = await response.json();
-        result = response.ok ? (body.candidates?.[0]?.content?.parts?.[0]?.text?.trim() || "") : null;
+        const reqBody = { systemInstruction: { parts: [{ text: systemPrompt }] }, contents: [{ role: "user", parts }], generationConfig: { temperature: 0.3, maxOutputTokens: 4096 } };
+        let { ok, status, body } = await callGeminiApi(config.key, config.model, reqBody);
+        if (!ok && isGeminiQuotaError(status, body) && config.fallbackModel !== config.model) {
+          console.log(`Gemini quota exceeded on ${config.model}, falling back to ${config.fallbackModel}`);
+          ({ ok, body } = await callGeminiApi(config.key, config.fallbackModel, reqBody));
+        }
+        result = ok ? (body.candidates?.[0]?.content?.parts?.[0]?.text?.trim() || "") : null;
       } else if (provider === "openai" && configuredOpenAI(state)) {
         const config = openAIConfig(state);
         const contentParts = imgList.map(img => ({
