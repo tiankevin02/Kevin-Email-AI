@@ -275,11 +275,9 @@ function handleRoute() {
   if (view === "settings" && window.innerWidth <= 768) {
     currentView = view;
     document.querySelectorAll(".mobile-settings-btn").forEach(el => el.classList.add("active"));
-    const sv = viewEl;
-    sv.classList.remove("settings-closing");
     renderSettings();
-    sv.classList.add("active", "settings-opening");
-    sv.addEventListener("animationend", () => sv.classList.remove("settings-opening"), { once: true });
+    // rAF ensures DOM is painted at opacity:0 before transition starts — no flash
+    requestAnimationFrame(() => viewEl.classList.add("active"));
     return;
   }
 
@@ -312,10 +310,8 @@ window.addEventListener("hashchange", handleRoute);
 function toggleMobileSettings() {
   if (currentView === "settings") {
     const el = document.getElementById("view-settings");
-    el.classList.remove("settings-opening");
-    el.classList.add("settings-closing");
+    el.classList.remove("active"); // triggers CSS transition back to opacity:0
     setTimeout(() => {
-      el.classList.remove("settings-closing", "active");
       // Previous view is still rendered underneath — just restore state
       currentView = settingsReturnView || "dashboard";
       history.replaceState(null, "", `#${currentView}`);
