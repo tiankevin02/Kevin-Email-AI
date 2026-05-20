@@ -1067,23 +1067,24 @@ img { max-width: 100%; }
     padding: 24px 18px 48px;
     /* origin = center of gear button: right:35px top:33px */
     transform-origin: calc(100% - 35px) 33px;
+    will-change: transform, opacity, filter;
   }
 
   @keyframes settingsOpen {
-    0%   { transform: scale(0.04); border-radius: 50%;  opacity: 0; }
-    55%  { border-radius: 18px; opacity: 1; }
-    100% { transform: scale(1);    border-radius: 0px;  opacity: 1; }
+    0%   { transform: scale(0.05); opacity: 0; filter: blur(6px); border-radius: 50%; }
+    60%  { border-radius: 14px; filter: blur(1px); }
+    100% { transform: scale(1);    opacity: 1; filter: blur(0);   border-radius: 0; }
   }
   @keyframes settingsClose {
-    0%   { transform: scale(1);    border-radius: 0px;  opacity: 1; }
-    100% { transform: scale(0.04); border-radius: 50%;  opacity: 0; }
+    0%   { opacity: 1; filter: blur(0);   transform: scale(1); }
+    100% { opacity: 0; filter: blur(10px); transform: scale(0.97); }
   }
 
   #view-settings.settings-opening {
-    animation: settingsOpen 0.38s cubic-bezier(0.34, 1.35, 0.64, 1) both;
+    animation: settingsOpen 0.4s cubic-bezier(0.34, 1.2, 0.64, 1) both;
   }
   #view-settings.settings-closing {
-    animation: settingsClose 0.26s cubic-bezier(0.55, 0, 0.8, 0) both;
+    animation: settingsClose 0.24s cubic-bezier(0.4, 0, 1, 1) both;
     pointer-events: none;
   }
 

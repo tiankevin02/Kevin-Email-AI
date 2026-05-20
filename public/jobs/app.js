@@ -276,19 +276,24 @@ function handleRoute() {
 
   const viewEl = document.getElementById(`view-${view}`);
   if (!viewEl) return;
-  viewEl.classList.add("active");
-
-  // Settings opening animation on mobile
-  if (view === "settings" && window.innerWidth <= 768) {
-    viewEl.classList.remove("settings-closing");
-    viewEl.classList.add("settings-opening");
-    viewEl.addEventListener("animationend", () => viewEl.classList.remove("settings-opening"), { once: true });
-  }
 
   if (view === "company") {
     companyBackView = currentView === "calendar" ? "calendar" : "companies";
   }
   currentView = view;
+
+  // On mobile, render settings content while element is still hidden, then animate in
+  if (view === "settings" && window.innerWidth <= 768) {
+    viewEl.classList.remove("settings-closing");
+    renderSettings();
+    requestAnimationFrame(() => {
+      viewEl.classList.add("active", "settings-opening");
+      viewEl.addEventListener("animationend", () => viewEl.classList.remove("settings-opening"), { once: true });
+    });
+    return;
+  }
+
+  viewEl.classList.add("active");
 
   if (view === "dashboard") renderDashboard();
   else if (view === "companies") renderCompanies();
@@ -2784,6 +2789,7 @@ function renderSettings() {
             <div id="data-status-info" style="font-size:13px;color:var(--text-2);line-height:1.8">確認中...</div>
             <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px">
               <button class="btn btn-secondary btn-sm" onclick="checkDataStatus()">状況を再確認</button>
+              <button class="btn btn-primary btn-sm" onclick="forceBackup()">今すぐバックアップ</button>
               <button class="btn btn-secondary btn-sm" onclick="restoreFromBackup()">バックアップから復元</button>
               <button class="btn btn-secondary btn-sm" onclick="forcePushToServer()">サーバーに強制同期</button>
             </div>
@@ -2825,6 +2831,13 @@ function renderSettings() {
     </div>
   `;
   loadAiStatus();
+  // Auto-backup: if we have data but backup is empty, silently write backup now
+  if (state.companies.length > 0) {
+    const backup = _readStorage(BACKUP_KEY);
+    if (!(backup.companies || []).length) {
+      localStorage.setItem(BACKUP_KEY, JSON.stringify({ companies: state.companies, schedules: state.schedules, updatedAt: Date.now() }));
+    }
+  }
   checkDataStatus();
 }
 
@@ -2867,6 +2880,14 @@ async function forcePushToServer() {
   } catch (e) {
     toast("サーバー同期に失敗しました: " + e.message, 5000);
   }
+}
+
+function forceBackup() {
+  if (!state.companies.length) { toast("バックアップするデータがありません"); return; }
+  const entry = { companies: state.companies, schedules: state.schedules, updatedAt: Date.now() };
+  localStorage.setItem(BACKUP_KEY, JSON.stringify(entry));
+  toast(`${state.companies.length}社のデータをバックアップしました`);
+  checkDataStatus();
 }
 
 async function loadAiStatus() {
