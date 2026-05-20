@@ -3168,8 +3168,11 @@ async function loadAiStatus() {
   if (!el) return;
   try {
     const s = await fetchJson("/api/status");
+    const geminiConfigured = s.savedConfig?.geminiApiKey || s.configFromEnv?.gemini;
+    const effectiveModel   = s.configFromEnv?.geminiModelEffective || s.savedConfig?.geminiModel || "gemini-3.5-flash";
+    const fallbackModel    = s.configFromEnv?.geminiModelFallback  || "";
     const providers = [
-      { name: "Gemini", configured: s.savedConfig?.geminiApiKey || s.configFromEnv?.gemini },
+      { name: geminiConfigured ? `Gemini (${effectiveModel}${fallbackModel && fallbackModel !== effectiveModel ? ` → ${fallbackModel}` : ""})` : "Gemini", configured: geminiConfigured },
       { name: "OpenAI", configured: s.savedConfig?.openAIKey || s.configFromEnv?.openAI },
       { name: "Grok", configured: s.savedConfig?.grokApiKey || s.configFromEnv?.grok },
       { name: "Anthropic", configured: s.savedConfig?.anthropicApiKey || s.configFromEnv?.anthropic },

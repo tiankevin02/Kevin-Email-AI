@@ -1196,6 +1196,7 @@ async function route(req, res) {
           openAIKey: Boolean(state.config.openAIKey),
           openAIModel: state.config.openAIModel || "gpt-4o-mini",
           geminiApiKey: Boolean(state.config.geminiApiKey),
+          geminiModel: state.config.geminiModel || "gemini-3.5-flash",
           anthropicApiKey: Boolean(state.config.anthropicApiKey),
           grokApiKey: Boolean(state.config.grokApiKey),
           preferredAiProvider: state.config.preferredAiProvider || ""
@@ -1204,6 +1205,9 @@ async function route(req, res) {
           google: Boolean(env.GOOGLE_CLIENT_ID && env.GOOGLE_CLIENT_SECRET),
           openAI: Boolean(env.OPENAI_API_KEY),
           gemini: Boolean(env.GEMINI_API_KEY),
+          geminiModel: env.GEMINI_MODEL || null,
+          geminiModelEffective: geminiConfig(state).model,
+          geminiModelFallback: geminiConfig(state).fallbackModel,
           anthropic: Boolean(env.ANTHROPIC_API_KEY),
           grok: Boolean(env.GROK_API_KEY || env.XAI_API_KEY)
         },
