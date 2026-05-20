@@ -501,6 +501,31 @@ img { max-width: 100%; }
   flex-wrap: wrap;
 }
 
+/* ===== Labeled filter rows ===== */
+.filter-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+.filter-row-label {
+  font-size: 10.5px;
+  font-weight: 700;
+  color: var(--text-4);
+  white-space: nowrap;
+  min-width: 26px;
+  letter-spacing: 0.3px;
+}
+.filter-row-chips {
+  display: flex;
+  gap: 5px;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: none;
+  padding-bottom: 2px;
+}
+.filter-row-chips::-webkit-scrollbar { display: none; }
+
 .filter-chip {
   padding: 5px 12px;
   border-radius: 999px;

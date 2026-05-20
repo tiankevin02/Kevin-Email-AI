@@ -551,28 +551,34 @@ function renderCompanies() {
       </div>
     </div>
 
-    <div class="filter-chips" style="margin-bottom:8px">
-      <button class="filter-chip ${filterSelectionType === "all" ? "active" : ""}" onclick="setSelectionTypeFilter('all')">全て</button>
-      <button class="filter-chip ${filterSelectionType === "インターン" ? "active" : ""}" onclick="setSelectionTypeFilter('インターン')">インターン</button>
-      <button class="filter-chip ${filterSelectionType === "本選考" ? "active" : ""}" onclick="setSelectionTypeFilter('本選考')">本選考</button>
+    <div style="display:flex;flex-direction:column;gap:0;background:var(--surface);border:1.5px solid var(--border);border-radius:12px;padding:10px 12px;margin-bottom:12px">
+      <div class="filter-row">
+        <span class="filter-row-label">種別</span>
+        <div class="filter-row-chips">
+          <button class="filter-chip ${filterSelectionType === "all" ? "active" : ""}" onclick="setSelectionTypeFilter('all')">全て</button>
+          <button class="filter-chip ${filterSelectionType === "インターン" ? "active" : ""}" onclick="setSelectionTypeFilter('インターン')">インターン</button>
+          <button class="filter-chip ${filterSelectionType === "本選考" ? "active" : ""}" onclick="setSelectionTypeFilter('本選考')">本選考</button>
+        </div>
+      </div>
+      <div class="filter-row">
+        <span class="filter-row-label">状況</span>
+        <div class="filter-row-chips" id="status-filters">
+          <button class="filter-chip ${filterStatus === "all" ? "active" : ""}" onclick="setStatusFilter('all')">すべて</button>
+          ${STATUSES.map(s => `<button class="filter-chip ${filterStatus === s.value ? "active" : ""}" onclick="setStatusFilter('${s.value}')">${s.label}</button>`).join("")}
+        </div>
+      </div>
+      ${(() => {
+        const industries = [...new Set(state.companies.map(c => c.industry).filter(v => v && v.trim()))].sort();
+        if (!industries.length) return "";
+        return `<div class="filter-row">
+          <span class="filter-row-label">業界</span>
+          <div class="filter-row-chips" id="industry-filters">
+            <button class="filter-chip ${filterIndustry === "all" ? "active" : ""}" onclick="setIndustryFilter('all')">全て</button>
+            ${industries.map(ind => `<button class="filter-chip ${filterIndustry === ind ? "active" : ""}" data-ind="${escHtml(ind)}" onclick="setIndustryFilter(this.dataset.ind)">${escHtml(ind)}</button>`).join("")}
+          </div>
+        </div>`;
+      })()}
     </div>
-
-    <div class="filter-chips" id="status-filters" style="margin-bottom:8px">
-      <button class="filter-chip ${filterStatus === "all" ? "active" : ""}" onclick="setStatusFilter('all')">すべて</button>
-      ${STATUSES.map(
-        (s) =>
-          `<button class="filter-chip ${filterStatus === s.value ? "active" : ""}" onclick="setStatusFilter('${s.value}')">${s.label}</button>`
-      ).join("")}
-    </div>
-
-    ${(() => {
-      const industries = [...new Set(state.companies.map(c => c.industry).filter(v => v && v.trim()))].sort();
-      if (!industries.length) return "";
-      return `<div class="filter-chips" id="industry-filters" style="margin-bottom:4px">
-        <button class="filter-chip ${filterIndustry === "all" ? "active" : ""}" onclick="setIndustryFilter('all')">全業界</button>
-        ${industries.map(ind => `<button class="filter-chip ${filterIndustry === ind ? "active" : ""}" data-ind="${escHtml(ind)}" onclick="setIndustryFilter(this.dataset.ind)">${escHtml(ind)}</button>`).join("")}
-      </div>`;
-    })()}
 
     <div style="margin-top:16px" id="companies-list"></div>
   `;
