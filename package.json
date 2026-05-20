@@ -4,6 +4,6 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "start": "node scripts/keep-gmail-session.mjs && node server.mjs"
+    "start": "node scripts/prefer-gemini-flash.mjs && node scripts/keep-gmail-session.mjs && node server.mjs"
   }
 }
