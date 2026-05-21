@@ -3042,7 +3042,8 @@ function renderSettings() {
               <button class="btn btn-secondary btn-sm" onclick="checkDataStatus()">状況を再確認</button>
               <button class="btn btn-primary btn-sm" onclick="forceBackup()">今すぐバックアップ</button>
               <button class="btn btn-secondary btn-sm" onclick="restoreFromBackup()">バックアップから復元</button>
-              <button class="btn btn-secondary btn-sm" onclick="forcePushToServer()">サーバーに強制同期</button>
+              <button class="btn btn-secondary btn-sm" onclick="forcePushToServer()">PCデータをサーバーへ送る</button>
+              <button class="btn btn-primary btn-sm" onclick="forcePullFromServer()" style="background:var(--green)">サーバーから最新データを取得</button>
             </div>
           </div>
 
@@ -3152,10 +3153,29 @@ async function forcePushToServer() {
   if (!state.companies.length) { toast("現在表示されているデータがありません"); return; }
   try {
     await _pushToServer();
-    toast(`${state.companies.length}社のデータをサーバーに同期しました`);
+    toast(`${state.companies.length}社のデータをサーバーに送りました`);
     checkDataStatus();
   } catch (e) {
     toast("サーバー同期に失敗しました: " + e.message, 5000);
+  }
+}
+
+async function forcePullFromServer() {
+  try {
+    const data = await fetchJson("/api/jobs");
+    if (!(data.companies || []).length) { toast("サーバーにデータがありません"); return; }
+    const esCount = data.companies.reduce((n, c) => n + (c.es || []).length, 0);
+    const ivCount  = data.companies.reduce((n, c) => n + (c.interviews || []).length, 0);
+    if (!confirm(`サーバーのデータで上書きします。\n\n企業: ${data.companies.length}社・ES: ${esCount}件・面接: ${ivCount}件\n\nよろしいですか？`)) return;
+    state.companies = data.companies;
+    state.schedules = data.schedules || [];
+    if (data.profile) state.profile = { ...state.profile, ...data.profile };
+    _writeStorage({ companies: state.companies, schedules: state.schedules, profile: state.profile, updatedAt: data.updatedAt || Date.now() });
+    toast(`取得完了：${state.companies.length}社・ES${esCount}件`);
+    checkDataStatus();
+    handleRoute();
+  } catch (e) {
+    toast("サーバーからの取得に失敗しました: " + e.message, 5000);
   }
 }
 
