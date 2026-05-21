@@ -3275,15 +3275,17 @@ async function init() {
   handleRoute();
 }
 
-// タブを閉じる・リロード前に確実にlocalStorageへ書く
+// タブを閉じる・リロード前に確実にlocalStorageへ書く（タイムスタンプは変更があった時だけ更新）
 window.addEventListener("beforeunload", () => {
-  _writeStorage({ companies: state.companies, schedules: state.schedules, profile: state.profile, updatedAt: Date.now() });
+  const ts = _readStorage(STORAGE_KEY).updatedAt || Date.now();
+  _writeStorage({ companies: state.companies, schedules: state.schedules, profile: state.profile, updatedAt: ts });
 });
 
 // モバイルでアプリを切り替えた時（beforeunloadが発火しないケース）も保存
 document.addEventListener("visibilitychange", () => {
   if (document.visibilityState === "hidden") {
-    _writeStorage({ companies: state.companies, schedules: state.schedules, profile: state.profile, updatedAt: Date.now() });
+    const ts = _readStorage(STORAGE_KEY).updatedAt || Date.now();
+    _writeStorage({ companies: state.companies, schedules: state.schedules, profile: state.profile, updatedAt: ts });
   }
 });
 
