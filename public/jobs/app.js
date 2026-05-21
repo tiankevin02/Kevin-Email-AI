@@ -3134,14 +3134,18 @@ function checkDataStatus() {
 function restoreFromBackup() {
   const backup = _readStorage(BACKUP_KEY);
   if (!(backup.companies || []).length) { toast("バックアップにデータがありません"); return; }
-  if (!confirm(`バックアップから${backup.companies.length}社のデータを復元しますか？\n現在のデータは上書きされます。`)) return;
+  const companyCount = backup.companies.length;
+  const esCount = backup.companies.reduce((n, c) => n + (c.es || []).length, 0);
+  const ivCount  = backup.companies.reduce((n, c) => n + (c.interviews || []).length, 0);
+  if (!confirm(`バックアップから復元しますか？\n\n企業: ${companyCount}社 / ES: ${esCount}件 / 面接: ${ivCount}件\n\n現在のデータはすべて上書きされます。`)) return;
   state.companies = backup.companies;
   state.schedules = backup.schedules || [];
-  _writeStorage({ companies: state.companies, schedules: state.schedules, updatedAt: Date.now() });
+  if (backup.profile) state.profile = { ...state.profile, ...backup.profile };
+  _writeStorage({ companies: state.companies, schedules: state.schedules, profile: state.profile, updatedAt: Date.now() });
   saveData();
-  toast(`${state.companies.length}社のデータをバックアップから復元しました`);
+  toast(`${companyCount}社・ES${esCount}件のデータを復元しました`);
   checkDataStatus();
-  renderDashboard();
+  handleRoute();
 }
 
 async function forcePushToServer() {
@@ -3156,10 +3160,11 @@ async function forcePushToServer() {
 }
 
 function forceBackup() {
-  if (!state.companies.length) { toast("バックアップするデータがありません"); return; }
-  const entry = { companies: state.companies, schedules: state.schedules, updatedAt: Date.now() };
+  const esCount = state.companies.reduce((n, c) => n + (c.es || []).length, 0);
+  const ivCount  = state.companies.reduce((n, c) => n + (c.interviews || []).length, 0);
+  const entry = { companies: state.companies, schedules: state.schedules, profile: state.profile, updatedAt: Date.now() };
   localStorage.setItem(BACKUP_KEY, JSON.stringify(entry));
-  toast(`${state.companies.length}社のデータをバックアップしました`);
+  toast(`バックアップ完了：${state.companies.length}社・ES${esCount}件・面接${ivCount}件`);
   checkDataStatus();
 }
 
@@ -3231,13 +3236,19 @@ function importData(input) {
     try {
       const data = JSON.parse(e.target.result);
       if (!data.companies && !data.schedules) throw new Error("無効なデータ形式です");
-      if (!confirm(`${(data.companies || []).length}社のデータをインポートします。現在のデータと統合しますか？`)) return;
-      state.companies = [...state.companies, ...(data.companies || [])];
-      state.schedules = [...state.schedules, ...(data.schedules || [])];
+      const esCount = (data.companies || []).reduce((n, c) => n + (c.es || []).length, 0);
+      const ivCount  = (data.companies || []).reduce((n, c) => n + (c.interviews || []).length, 0);
+      const choice = confirm(
+        `インポートするデータ：${(data.companies || []).length}社・ES${esCount}件・面接${ivCount}件\n\n` +
+        `【OK】= 現在のデータをすべて置き換える（推奨）\n【キャンセル】= 処理しない`
+      );
+      if (!choice) return;
+      state.companies = data.companies || [];
+      state.schedules = data.schedules || [];
       if (data.profile) state.profile = { ...state.profile, ...data.profile };
       await saveData();
-      toast("インポートしました");
-      renderSettings();
+      toast(`インポート完了：${state.companies.length}社・ES${esCount}件`);
+      handleRoute();
     } catch (err) {
       toast(err.message || "インポートに失敗しました", 5000);
     }
