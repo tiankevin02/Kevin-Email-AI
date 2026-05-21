@@ -2249,6 +2249,10 @@ ${answerFormat}`;
   }
 }
 
-http.createServer(route).listen(port, host, () => {
-  console.log(`Email AI Gmail is running at http://localhost:${port}`);
-});
+export { route };
+
+if (process.env.VERCEL !== "1") {
+  http.createServer(route).listen(port, host, () => {
+    console.log(`Email AI Gmail is running at http://localhost:${port}`);
+  });
+}
