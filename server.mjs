@@ -1635,9 +1635,10 @@ AIプロバイダー: Gemini=gemini, Anthropic/Claude=anthropic, OpenAI/GPT=open
     }
 
     if (req.method === "POST" && url.pathname === "/api/jobs/ai/es-review") {
-      const { companyName, question, answer, userProfile } = await parseBody(req);
+      const { companyName, question, answer, userProfile, maxChars } = await parseBody(req);
       if (!companyName || !question || !answer) { sendJson(res, 400, { error: "企業名・設問・回答を入力してください。" }); return; }
       const profileCtx = buildProfileContext(userProfile);
+      const charNote = maxChars ? `（${maxChars}字以内で記述すること）` : `（改善版の回答例を提示）`;
       const system = `あなたは${companyName}の人事採用担当です。エントリーシートの書類選考を行います。
 
 まず${companyName}の企業理念・価値観・求める人材像をあなたの知識で整理し、そのペルソナに基づいてESを評価・添削してください。
@@ -1661,7 +1662,7 @@ AIプロバイダー: Gemini=gemini, Anthropic/Claude=anthropic, OpenAI/GPT=open
 - （2〜3点、具体的に）
 
 ## 添削後の例文
-（改善版の回答例を提示）
+${charNote}
 
 ## 総評
 （100字程度の総合コメント）`;
@@ -1763,12 +1764,16 @@ AIプロバイダー: Gemini=gemini, Anthropic/Claude=anthropic, OpenAI/GPT=open
     }
 
     if (req.method === "POST" && url.pathname === "/api/jobs/ai/es-advice") {
-      const { companyName, question, userProfile } = await parseBody(req);
+      const { companyName, question, userProfile, maxChars } = await parseBody(req);
       if (!companyName || !question) { sendJson(res, 400, { error: "企業名と設問を入力してください。" }); return; }
       const profileCtx = buildProfileContext(userProfile);
+      const sampleLabel = maxChars ? `参考例文（${maxChars}字程度）` : `参考例文（100字程度）`;
+      const sampleNote = maxChars
+        ? `（${maxChars}字程度で書き始め〜本文まで全体の流れを示すこと${profileCtx ? "・応募者のプロフィールを活かすこと" : ""}）`
+        : profileCtx ? "（応募者のプロフィールを活かした書き出し例）" : "（書き出しの例）";
       const system = `あなたは${companyName}の人事採用担当です。ESの設問に対して、応募者が回答を作成するためのアドバイスを提供します。応募者のプロフィール情報がある場合はそれを踏まえた具体的なアドバイスをしてください。`;
       const user = `【企業】${companyName}
-【設問】${question}${profileCtx}
+【設問】${question}${maxChars ? `\n【文字数制限】${maxChars}字以内` : ""}${profileCtx}
 
 以下の観点でアドバイスをマークダウンで提供してください：
 
@@ -1784,8 +1789,8 @@ AIプロバイダー: Gemini=gemini, Anthropic/Claude=anthropic, OpenAI/GPT=open
 ## 避けるべき表現・内容
 - （NG例）
 
-## 参考例文（100字程度）
-${profileCtx ? "（応募者のプロフィールを活かした書き出し例）" : "（書き出しの例）"}`;
+## ${sampleLabel}
+${sampleNote}`;
       const advice = await jobsAiChat(state, system, user);
       sendJson(res, 200, { advice });
       return;

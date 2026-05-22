@@ -1177,7 +1177,7 @@ async function runEsReview(companyId, esId) {
   if (reviewEl) reviewEl.innerHTML = `<div class="ai-loading"><div class="spinner"></div>AIが添削中...</div>`;
 
   try {
-    const res = await aiPost("/api/jobs/ai/es-review", { companyName: c.name, question: entry.question, answer: entry.answer });
+    const res = await aiPost("/api/jobs/ai/es-review", { companyName: c.name, question: entry.question, answer: entry.answer, maxChars: entry.maxChars || null });
     entry.aiReview = res.review;
     entry.updatedAt = now();
     c.updatedAt = now();
@@ -1229,7 +1229,7 @@ async function runEsAdvice(companyId, esId) {
   const reviewEl = document.getElementById(`es-review-${esId}`);
   if (reviewEl) reviewEl.innerHTML = `<div class="ai-loading"><div class="spinner"></div>AIがアドバイス作成中...</div>`;
   try {
-    const res = await aiPost("/api/jobs/ai/es-advice", { companyName: c.name, question: entry.question });
+    const res = await aiPost("/api/jobs/ai/es-advice", { companyName: c.name, question: entry.question, maxChars: entry.maxChars || null });
     entry.aiAdvice = res.advice;
     entry.updatedAt = now();
     c.updatedAt = now();
