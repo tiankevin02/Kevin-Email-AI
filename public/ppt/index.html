@@ -1,0 +1,181 @@
+<!doctype html>
+<html lang="ja">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>PPT AI - Email AI</title>
+    <link rel="icon" href="/icons/icon.svg" type="image/svg+xml" />
+    <link rel="stylesheet" href="/styles.css" />
+    <link rel="stylesheet" href="/ppt/styles.css" />
+  </head>
+  <body>
+    <main class="appFrame">
+      <header class="appHeader">
+        <div>
+          <h1>PPT AI</h1>
+          <p id="connectionText">PowerPoint 作成・解析ツール</p>
+        </div>
+        <div class="headerActions">
+          <a class="connectButton" href="/" style="background:#6b7280;border-color:#6b7280">メールAI</a>
+          <a class="connectButton" href="/jobs" style="background:#059669;border-color:#059669">就活</a>
+          <a class="connectButton" href="/quiz" style="background:#4f46e5;border-color:#4f46e5">Webテスト</a>
+        </div>
+      </header>
+
+      <section class="pptTabs">
+        <button class="pptTab active" data-tab="generate">スライド生成</button>
+        <button class="pptTab" data-tab="analyze">PPTX解析</button>
+      </section>
+
+      <!-- Generate Tab -->
+      <section id="generateTab" class="pptSection">
+        <div class="pptLayout">
+          <div class="pptForm">
+            <h2>AIでスライドを生成</h2>
+            <p class="pptDescription">トピックを入力するとAIがスライド構成を作成し、PowerPointファイルをダウンロードできます。</p>
+
+            <div class="formGroup">
+              <label>トピック / テーマ <span class="required">必須</span></label>
+              <input id="topicInput" type="text" placeholder="例: AIの未来、マーケティング戦略、四半期業績報告" />
+            </div>
+
+            <div class="formGrid2">
+              <div class="formGroup">
+                <label>スライド枚数</label>
+                <select id="slideCountInput">
+                  <option value="5">5枚</option>
+                  <option value="8" selected>8枚</option>
+                  <option value="10">10枚</option>
+                  <option value="12">12枚</option>
+                  <option value="15">15枚</option>
+                  <option value="20">20枚</option>
+                </select>
+              </div>
+              <div class="formGroup">
+                <label>スタイル / トーン</label>
+                <select id="styleInput">
+                  <option value="プロフェッショナル、簡潔">プロフェッショナル</option>
+                  <option value="フォーマル、詳細">フォーマル</option>
+                  <option value="カジュアル、わかりやすい">カジュアル</option>
+                  <option value="学術的、論理的">学術的</option>
+                  <option value="営業向け、説得力重視">営業向け</option>
+                </select>
+              </div>
+            </div>
+
+            <div class="formGroup">
+              <label>目的 / 用途</label>
+              <input id="purposeInput" type="text" placeholder="例: 社内プレゼン、顧客提案、学会発表、授業" />
+            </div>
+
+            <div class="formGroup">
+              <label>追加指示（任意）</label>
+              <textarea id="extraInput" rows="3" placeholder="例: グラフや図のプレースホルダーを含める、日本市場に特化した内容、英語のスライドタイトル"></textarea>
+            </div>
+
+            <div class="formGroup">
+              <label>テーマカラー</label>
+              <div class="colorPalette">
+                <button class="colorSwatch active" data-scheme="blue" style="background:#1e40af" title="ブルー"></button>
+                <button class="colorSwatch" data-scheme="green" style="background:#166534" title="グリーン"></button>
+                <button class="colorSwatch" data-scheme="red" style="background:#991b1b" title="レッド"></button>
+                <button class="colorSwatch" data-scheme="purple" style="background:#6b21a8" title="パープル"></button>
+                <button class="colorSwatch" data-scheme="orange" style="background:#c2410c" title="オレンジ"></button>
+                <button class="colorSwatch" data-scheme="gray" style="background:#374151" title="グレー"></button>
+              </div>
+            </div>
+
+            <button id="generateButton" class="primaryButton">
+              <span id="generateButtonText">スライド生成</span>
+            </button>
+          </div>
+
+          <div class="pptPreview" id="previewPanel">
+            <div class="previewEmpty" id="previewEmpty">
+              <p>スライドを生成すると<br>ここにプレビューが表示されます</p>
+            </div>
+            <div class="previewContent hidden" id="previewContent">
+              <div class="previewHeader">
+                <h3 id="previewTitle"></h3>
+                <div class="previewActions">
+                  <button id="editGeneratedButton" class="utilityButton">内容を編集</button>
+                  <button id="downloadButton" class="primaryButton small">PPTXダウンロード</button>
+                </div>
+              </div>
+              <div id="slidesList" class="slidesList"></div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Edit Modal -->
+        <div id="editModal" class="modal hidden">
+          <div class="modalContent">
+            <div class="modalHeader">
+              <h3>スライド内容を編集</h3>
+              <button id="closeEditModal" class="utilityButton">閉じる</button>
+            </div>
+            <div id="editSlidesList" class="editSlidesList"></div>
+            <div class="modalFooter">
+              <button id="applyEditButton" class="primaryButton">編集を適用してダウンロード</button>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Analyze Tab -->
+      <section id="analyzeTab" class="pptSection hidden">
+        <div class="pptLayout">
+          <div class="pptForm">
+            <h2>PPTXファイルを解析</h2>
+            <p class="pptDescription">PowerPointファイルをアップロードすると、AIがスライドの内容を読み取り、質問に答えたり改善提案をします。</p>
+
+            <div class="uploadArea" id="uploadArea">
+              <input type="file" id="pptxFileInput" accept=".pptx" class="fileInputHidden" />
+              <div class="uploadContent" id="uploadContent">
+                <div class="uploadIcon">📊</div>
+                <p>PPTXファイルをドラッグ&ドロップ<br>またはクリックして選択</p>
+                <span class="fileNote">.pptx のみ対応</span>
+              </div>
+              <div class="uploadedInfo hidden" id="uploadedInfo">
+                <span class="uploadedIcon">✅</span>
+                <div>
+                  <strong id="uploadedFileName"></strong>
+                  <span id="uploadedSlideCount"></span>
+                </div>
+                <button id="clearFileButton" class="utilityButton small">クリア</button>
+              </div>
+            </div>
+
+            <div id="slidePreviewList" class="slidePreviewList hidden"></div>
+
+            <div class="formGroup" id="questionSection" style="display:none">
+              <label>質問 / 依頼</label>
+              <textarea id="questionInput" rows="4" placeholder="例:&#10;・このプレゼンの要約を教えてください&#10;・改善点を提案してください&#10;・スライド3の内容を詳しく説明してください&#10;・英語版のアウトラインを作ってください"></textarea>
+            </div>
+
+            <button id="analyzeButton" class="primaryButton hidden">AI に質問する</button>
+          </div>
+
+          <div class="pptPreview" id="analyzeResultPanel">
+            <div class="previewEmpty" id="analyzeEmpty">
+              <p>PPTXをアップロードして<br>AIに質問してください</p>
+            </div>
+            <div class="previewContent hidden" id="analyzeResult">
+              <div class="previewHeader">
+                <h3>AI の回答</h3>
+              </div>
+              <div id="analyzeBody" class="analyzeBody"></div>
+            </div>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <div id="toast" class="toast hidden"></div>
+
+    <!-- Libraries from CDN -->
+    <script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/pptxgenjs@3.12.0/dist/pptxgen.bundle.js"></script>
+    <script src="/ppt/app.js"></script>
+  </body>
+</html>

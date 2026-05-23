@@ -2224,10 +2224,76 @@ ${answerFormat}`;
       return;
     }
 
+    if (req.method === "POST" && url.pathname === "/api/ppt/generate") {
+      const { topic, slideCount, style, purpose, extraInstructions, userProfile } = await parseBody(req);
+      if (!topic) { sendJson(res, 400, { error: "トピックを入力してください。" }); return; }
+      if (!configuredAI(state)) {
+        const err = new Error("AIサービスが設定されていません。設定からAPIキーを入力してください。");
+        err.status = 400;
+        throw err;
+      }
+      const count = Math.min(Math.max(Number(slideCount) || 8, 3), 20);
+      const profileCtx = buildProfileContext(userProfile);
+      const system = `あなたはプレゼンテーション作成の専門家です。ユーザーのリクエストに基づいて、プロフェッショナルなスライド構成をJSON形式で返します。マークダウンや説明文は不要です。JSONのみを返してください。`;
+      const user = `以下の条件でプレゼンテーションのスライド構成を作成してください。
+
+【トピック】${topic}
+【スライド枚数】${count}枚（タイトルスライド含む）
+【目的/用途】${purpose || "一般的なプレゼンテーション"}
+【スタイル/トーン】${style || "プロフェッショナル、簡潔"}
+${extraInstructions ? `【追加指示】${extraInstructions}` : ""}${profileCtx}
+
+以下のJSON形式で返してください：
+{
+  "title": "プレゼンテーション全体のタイトル",
+  "subtitle": "サブタイトル（任意）",
+  "slides": [
+    {
+      "type": "title|content|section|closing",
+      "title": "スライドタイトル",
+      "bullets": ["箇条書き1", "箇条書き2", "箇条書き3"],
+      "notes": "発表者ノート（任意、スライドの補足説明）"
+    }
+  ]
+}
+
+type の意味: title=表紙, content=通常コンテンツ, section=セクション区切り, closing=最終スライド
+箇条書きは各スライド3〜5項目程度。簡潔かつ具体的に。`;
+      const raw = await jobsAiChat(state, system, user);
+      let result;
+      try {
+        const cleaned = raw.trim().replace(/^```json\s*/i, "").replace(/^```\s*/i, "").replace(/```$/i, "").trim();
+        result = JSON.parse(cleaned);
+      } catch {
+        const match = raw.match(/\{[\s\S]*\}/);
+        if (!match) { sendJson(res, 500, { error: "AIからの応答を解析できませんでした。" }); return; }
+        try { result = JSON.parse(match[0]); } catch { sendJson(res, 500, { error: "AIからの応答を解析できませんでした。" }); return; }
+      }
+      sendJson(res, 200, result);
+      return;
+    }
+
+    if (req.method === "POST" && url.pathname === "/api/ppt/analyze") {
+      const { slides, question } = await parseBody(req);
+      if (!slides || !slides.length) { sendJson(res, 400, { error: "スライドデータが必要です。" }); return; }
+      if (!configuredAI(state)) {
+        const err = new Error("AIサービスが設定されていません。設定からAPIキーを入力してください。");
+        err.status = 400;
+        throw err;
+      }
+      const slidesText = slides.map((s, i) => `## スライド${i + 1}: ${s.title || "(タイトルなし)"}\n${s.content || "(コンテンツなし)"}`).join("\n\n");
+      const system = "あなたはプレゼンテーション分析の専門家です。アップロードされたPowerPointの内容を分析し、ユーザーの質問に日本語で答えます。";
+      const userContent = `以下のプレゼンテーション（${slides.length}枚のスライド）について回答してください。\n\n${slidesText}\n\n【質問/依頼】${question || "このプレゼンテーションの内容を要約し、改善点を提案してください。"}`;
+      const answer = await jobsAiChat(state, system, userContent);
+      sendJson(res, 200, { answer });
+      return;
+    }
+
     if (req.method === "GET") {
       const pathname = url.pathname === "/" ? "/index.html"
         : (url.pathname === "/jobs" || url.pathname === "/jobs/") ? "/jobs/index.html"
         : (url.pathname === "/quiz" || url.pathname === "/quiz/") ? "/quiz/index.html"
+        : (url.pathname === "/ppt" || url.pathname === "/ppt/") ? "/ppt/index.html"
         : url.pathname;
       const safePath = path.normalize(path.join(publicDir, pathname));
       if (!safePath.startsWith(publicDir)) {
