@@ -248,17 +248,14 @@ async function loadData() {
     }
   } catch {}
 
-  // Weekly export reminder
+  // Daily auto-export: automatically download backup file once per day
   if (state.companies.length > 0) {
     const lastExport = parseInt(localStorage.getItem("lastExportDate") || "0", 10);
-    const daysSince = (Date.now() - lastExport) / (1000 * 60 * 60 * 24);
-    if (daysSince >= 7) {
-      setTimeout(() => {
-        const msg = lastExport === 0
-          ? "データのバックアップをまだ取っていません。設定からエクスポートをお勧めします。"
-          : `前回のエクスポートから${Math.floor(daysSince)}日経過しています。定期バックアップをお勧めします。`;
-        toast(msg, 7000);
-      }, 3000);
+    const lastExportDay = lastExport ? new Date(lastExport).toDateString() : "";
+    const todayStr = new Date().toDateString();
+    const alreadyExportedToday = sessionStorage.getItem("autoExportedThisSession") === "1";
+    if (lastExportDay !== todayStr && !alreadyExportedToday) {
+      setTimeout(() => autoExport(true), 3000);
     }
   }
 }
@@ -3048,9 +3045,12 @@ function renderSettings() {
           </div>
 
           <div class="form-group mt-3">
-            <label class="form-label">データをエクスポート</label>
-            <div class="form-hint">JSONファイルとしてダウンロード（定期的に保存推奨）</div>
-            <button class="btn btn-secondary mt-2" onclick="exportData()">データをエクスポート</button>
+            <label class="form-label">自動バックアップ</label>
+            <div class="form-hint" style="margin-bottom:8px">アプリを開いたとき、前回から24時間以上経っていると自動でJSONファイルをダウンロードします。ファイルはダウンロードフォルダに溜まるので大切にとっておいてください。</div>
+            <div style="display:flex;gap:8px;flex-wrap:wrap">
+              <button class="btn btn-primary btn-sm" onclick="autoExport()" style="background:var(--green)">今すぐバックアップ保存</button>
+              <button class="btn btn-secondary btn-sm" onclick="exportData()">手動エクスポート</button>
+            </div>
           </div>
           <div class="form-group">
             <label class="form-label">データをインポート</label>
@@ -3121,14 +3121,14 @@ function checkDataStatus() {
   const lastExport = parseInt(localStorage.getItem("lastExportDate") || "0", 10);
   const exportDate = lastExport ? new Date(lastExport).toLocaleString("ja-JP") : "なし";
   const daysSinceExport = lastExport ? Math.floor((Date.now() - lastExport) / (1000 * 60 * 60 * 24)) : null;
-  const exportWarning = daysSinceExport === null || daysSinceExport >= 7
-    ? ` <span style="color:var(--orange,#f59e0b);font-weight:700">⚠ バックアップ推奨</span>` : "";
+  const exportWarning = daysSinceExport === null || daysSinceExport >= 2
+    ? ` <span style="color:var(--orange,#f59e0b);font-weight:700">⚠ ファイル保存推奨</span>` : " ✅";
   el.innerHTML = `
     <div>🖥️ メモリ（現在）: <strong>${serverCount}社</strong></div>
     <div>💾 メインストレージ: <strong>${mainCount}社</strong>（最終更新: ${mainDate}）</div>
     <div>🛡️ バックアップ: <strong>${backupCount}社</strong>（最終更新: ${backupDate}）</div>
-    <div>📤 最終エクスポート: <strong>${exportDate}</strong>${exportWarning}</div>
-    <div style="margin-top:6px;font-size:12px;color:var(--text-3,#9ca3af)">リデプロイ・サーバー再起動が起きてもローカルデータは自動復元されます</div>
+    <div>📁 最終ファイル保存: <strong>${exportDate}</strong>${exportWarning}</div>
+    <div style="margin-top:6px;font-size:12px;color:var(--text-3,#9ca3af)">毎日自動でファイルにバックアップされます。ダウンロードフォルダを確認してください。</div>
   `;
 }
 
@@ -3234,6 +3234,24 @@ async function saveAiKeys() {
   }
 }
 
+function autoExport(silent = false) {
+  if (!state.companies.length) return;
+  const data = JSON.stringify({ companies: state.companies, schedules: state.schedules, profile: state.profile, exportedAt: Date.now() }, null, 2);
+  const blob = new Blob([data], { type: "application/json" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = `shukatsu-backup-${today()}.json`;
+  a.click();
+  URL.revokeObjectURL(url);
+  localStorage.setItem("lastExportDate", String(Date.now()));
+  sessionStorage.setItem("autoExportedThisSession", "1");
+  if (silent) {
+    toast(`自動バックアップ完了（${state.companies.length}社）。ファイルに保存されました。`, 6000);
+  }
+  checkDataStatus();
+}
+
 function exportData() {
   const data = JSON.stringify({ companies: state.companies, schedules: state.schedules, profile: state.profile, exportedAt: Date.now() }, null, 2);
   const blob = new Blob([data], { type: "application/json" });
@@ -3244,6 +3262,7 @@ function exportData() {
   a.click();
   URL.revokeObjectURL(url);
   localStorage.setItem("lastExportDate", String(Date.now()));
+  sessionStorage.setItem("autoExportedThisSession", "1");
   toast("エクスポートしました");
   checkDataStatus();
 }
