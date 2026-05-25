@@ -83,8 +83,15 @@
 <body>
 
 <div class="header">
-  <h1>就活データ入力ツール</h1>
-  <p>サーバー不要・完全オフライン。入力して「JSONを出力」→アプリにインポートで同期</p>
+  <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:10px">
+    <div>
+      <h1>就活データ入力ツール</h1>
+      <p>サーバー不要・完全オフライン。入力して「JSONを出力」→アプリにインポートで同期</p>
+    </div>
+    <button class="btn btn-ghost btn-sm" onclick="openClaude()" title="Claudeと並べて使う" style="flex-shrink:0;margin-top:2px">
+      🤖 Claudeを開く
+    </button>
+  </div>
   <div class="header-btns">
     <button class="btn btn-green" onclick="exportJSON()">📥 JSONを出力</button>
     <label class="btn btn-ghost" style="cursor:pointer">
@@ -399,6 +406,24 @@ function importJSON(input) {
   };
   reader.readAsText(file);
   input.value = "";
+}
+
+function openClaude() {
+  // Open Claude in a new window sized to fill the right half of the screen
+  const w = Math.floor(window.screen.width / 2);
+  const h = window.screen.height;
+  const left = window.screen.width - w;
+  const claudeWin = window.open("https://claude.ai/new", "claude-ai", `width=${w},height=${h},left=${left},top=0`);
+  // Try to resize this window to the left half
+  try {
+    window.moveTo(0, 0);
+    window.resizeTo(w, h);
+  } catch {}
+  if (!claudeWin) {
+    showToast("ポップアップがブロックされました。設定から許可してください");
+  } else {
+    showToast("Claudeを右半分に開きました。並べて使ってください");
+  }
 }
 
 function showToast(msg) {
