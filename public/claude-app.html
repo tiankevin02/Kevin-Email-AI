@@ -1,0 +1,1396 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>就活AI アシスタント</title>
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --bg:#0f1117;--surface:#1a1d27;--surface2:#22263a;--surface3:#2a2f45;
+  --border:#2d3148;--accent:#6c7fff;--accent2:#818cf8;
+  --green:#22c55e;--red:#ef4444;--orange:#f59e0b;--yellow:#eab308;
+  --text1:#e8eaf6;--text2:#9ca3cf;--text3:#6b7280;
+  --radius:10px;--radius-sm:6px;--nav-h:56px;
+}
+html,body{height:100%;background:var(--bg);color:var(--text1);font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;font-size:15px;line-height:1.5}
+a{color:var(--accent);text-decoration:none}
+button{cursor:pointer;font-family:inherit;font-size:14px;border:none;outline:none}
+
+/* Layout */
+#app{display:flex;flex-direction:column;height:100vh;overflow:hidden}
+#view{flex:1;overflow-y:auto;padding:16px;padding-bottom:calc(var(--nav-h) + 16px)}
+#nav{position:fixed;bottom:0;left:0;right:0;height:var(--nav-h);background:var(--surface);border-top:1px solid var(--border);display:flex;align-items:stretch;z-index:100}
+.nav-btn{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;background:none;color:var(--text3);font-size:10px;transition:color .15s}
+.nav-btn svg{width:22px;height:22px}
+.nav-btn.active{color:var(--accent)}
+
+/* Cards */
+.card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:16px;margin-bottom:12px}
+.card-sm{padding:12px}
+
+/* Buttons */
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:6px;padding:9px 16px;border-radius:var(--radius-sm);font-weight:600;transition:opacity .15s,transform .1s;white-space:nowrap}
+.btn:active{transform:scale(.97)}
+.btn-primary{background:var(--accent);color:#fff}
+.btn-secondary{background:var(--surface2);color:var(--text1);border:1px solid var(--border)}
+.btn-danger{background:var(--red);color:#fff}
+.btn-green{background:var(--green);color:#fff}
+.btn-sm{padding:6px 12px;font-size:13px}
+.btn-xs{padding:4px 8px;font-size:12px}
+.btn:disabled{opacity:.45;pointer-events:none}
+
+/* Forms */
+.form-group{margin-bottom:14px}
+.form-label{display:block;font-size:13px;color:var(--text2);margin-bottom:5px;font-weight:500}
+.form-input,.form-select,.form-textarea{width:100%;background:var(--surface2);border:1px solid var(--border);border-radius:var(--radius-sm);padding:9px 12px;color:var(--text1);font-size:14px;font-family:inherit;transition:border-color .15s;outline:none}
+.form-input:focus,.form-select:focus,.form-textarea:focus{border-color:var(--accent)}
+.form-textarea{resize:vertical;min-height:80px}
+.form-hint{font-size:12px;color:var(--text3);margin-top:4px}
+select.form-select option{background:var(--surface2)}
+
+/* Badges */
+.badge{display:inline-block;padding:2px 8px;border-radius:20px;font-size:11px;font-weight:700}
+.badge-green{background:rgba(34,197,94,.15);color:var(--green)}
+.badge-blue{background:rgba(108,127,255,.15);color:var(--accent)}
+.badge-orange{background:rgba(245,158,11,.15);color:var(--orange)}
+.badge-red{background:rgba(239,68,68,.15);color:var(--red)}
+.badge-gray{background:var(--surface2);color:var(--text2)}
+
+/* Status colors */
+.s-0{color:var(--text3)}
+.s-1{color:var(--accent)}
+.s-2{color:var(--orange)}
+.s-3{color:var(--green)}
+.s-4{color:var(--red)}
+
+/* Page header */
+.page-header{display:flex;align-items:center;gap:10px;margin-bottom:16px}
+.page-header h1{font-size:20px;font-weight:700;flex:1}
+.back-btn{background:none;color:var(--text2);padding:4px;display:flex;align-items:center;justify-content:center}
+
+/* Tabs */
+.tabs{display:flex;gap:4px;background:var(--surface2);padding:4px;border-radius:var(--radius-sm);margin-bottom:16px;overflow-x:auto}
+.tab{flex:1;padding:7px 10px;border-radius:4px;background:none;color:var(--text2);font-size:13px;font-weight:500;white-space:nowrap;transition:all .15s;min-width:fit-content}
+.tab.active{background:var(--surface);color:var(--text1);box-shadow:0 1px 3px rgba(0,0,0,.3)}
+
+/* Grid */
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.stat-card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:14px;text-align:center}
+.stat-num{font-size:28px;font-weight:800;color:var(--accent)}
+.stat-label{font-size:12px;color:var(--text2);margin-top:2px}
+
+/* Company list item */
+.company-item{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:14px;margin-bottom:8px;display:flex;align-items:center;gap:12px;cursor:pointer;transition:border-color .15s}
+.company-item:hover{border-color:var(--accent)}
+.company-icon{width:40px;height:40px;border-radius:8px;background:var(--surface2);display:flex;align-items:center;justify-content:center;font-size:18px;flex-shrink:0}
+.company-info{flex:1;min-width:0}
+.company-name{font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.company-meta{font-size:12px;color:var(--text2);margin-top:2px}
+
+/* Modal */
+.modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,.65);z-index:200;display:flex;align-items:flex-end;justify-content:center}
+.modal-overlay.center{align-items:center}
+.modal{background:var(--surface);border-radius:var(--radius) var(--radius) 0 0;width:100%;max-width:600px;max-height:90vh;overflow-y:auto;padding:20px}
+.modal-overlay.center .modal{border-radius:var(--radius);margin:16px}
+.modal-title{font-size:17px;font-weight:700;margin-bottom:16px}
+
+/* Toast */
+#toast{position:fixed;bottom:calc(var(--nav-h) + 12px);left:50%;transform:translateX(-50%) translateY(20px);background:#323650;border:1px solid var(--border);border-radius:var(--radius-sm);padding:10px 18px;font-size:13px;opacity:0;transition:all .3s;pointer-events:none;z-index:300;max-width:90vw;text-align:center}
+#toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
+
+/* AI result */
+.ai-result{background:var(--surface2);border:1px solid var(--border);border-radius:var(--radius-sm);padding:14px;white-space:pre-wrap;font-size:13px;line-height:1.7;color:var(--text1)}
+
+/* Spinner */
+.spinner{width:20px;height:20px;border:2px solid var(--border);border-top-color:var(--accent);border-radius:50%;animation:spin .7s linear infinite;display:inline-block}
+@keyframes spin{to{transform:rotate(360deg)}}
+
+/* Divider */
+.divider{border:none;border-top:1px solid var(--border);margin:14px 0}
+
+/* ES entry */
+.es-entry{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:14px;margin-bottom:10px}
+.es-entry-header{display:flex;align-items:flex-start;gap:8px;margin-bottom:10px}
+.es-entry-q{font-weight:600;font-size:14px;flex:1}
+.char-count{font-size:12px;color:var(--text3);white-space:nowrap}
+.char-ok{color:var(--green)}
+.char-over{color:var(--red)}
+
+/* Search */
+.search-box{display:flex;align-items:center;gap:8px;background:var(--surface2);border:1px solid var(--border);border-radius:var(--radius-sm);padding:8px 12px;margin-bottom:12px}
+.search-box input{flex:1;background:none;border:none;color:var(--text1);font-size:14px;outline:none}
+.search-box svg{color:var(--text3);width:16px;height:16px;flex-shrink:0}
+
+/* Info section */
+.info-row{display:flex;gap:8px;padding:10px 0;border-bottom:1px solid var(--border);align-items:flex-start}
+.info-key{font-size:12px;color:var(--text2);width:80px;flex-shrink:0;padding-top:2px}
+.info-val{font-size:14px;flex:1}
+
+/* Sync indicator */
+.sync-dot{width:8px;height:8px;border-radius:50%;display:inline-block;margin-right:4px}
+.sync-ok{background:var(--green)}
+.sync-pending{background:var(--orange)}
+.sync-off{background:var(--text3)}
+
+/* Responsive */
+@media(min-width:600px){
+  #view{max-width:640px;margin:0 auto;padding-bottom:calc(var(--nav-h) + 24px)}
+  #nav{max-width:640px;left:50%;transform:translateX(-50%)}
+}
+</style>
+</head>
+<body>
+<div id="app">
+  <div id="view"></div>
+  <nav id="nav">
+    <button class="nav-btn" data-route="" onclick="navigate('')">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>
+      ダッシュボード
+    </button>
+    <button class="nav-btn" data-route="companies" onclick="navigate('companies')">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 9l9-7 9 7v11a2 2 0 01-2 2H5a2 2 0 01-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>
+      企業一覧
+    </button>
+    <button class="nav-btn" data-route="schedule" onclick="navigate('schedule')">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
+      スケジュール
+    </button>
+    <button class="nav-btn" data-route="settings" onclick="navigate('settings')">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83-2.83l.06-.06A1.65 1.65 0 004.68 15a1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 012.83-2.83l.06.06A1.65 1.65 0 009 4.68a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z"/></svg>
+      設定
+    </button>
+  </nav>
+</div>
+<div id="toast"></div>
+
+<script>
+// ─── STATE ────────────────────────────────────────────────────────────────────
+const STORAGE_KEY = "claude-jobs-v1";
+const SYNC_KEY    = "claude-jobs-sync";
+
+let state = {
+  companies: [],
+  schedules: [],
+  profile: {},
+  updatedAt: 0
+};
+
+let syncId    = localStorage.getItem("jobs-sync-id") || "";
+let syncState = "off"; // off | ok | pending | error
+let syncTimer = null;
+
+const STATUS_LABELS = ["未着手","ES提出済","一次選考","二次選考以降","内定","不合格","辞退"];
+const STATUS_COLORS = ["s-0","s-1","s-2","s-2","s-3","s-4","s-4"];
+const INDUSTRIES = ["IT・通信","金融・保険","コンサルティング","メーカー（電機・機械）","メーカー（食品・日用品）","商社","小売・流通","広告・メディア","建設・不動産","医療・製薬","エネルギー","官公庁・公共","教育","その他"];
+
+// ─── STORAGE ─────────────────────────────────────────────────────────────────
+function saveLocal() {
+  try {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+    localStorage.setItem(STORAGE_KEY + "-bak", JSON.stringify(state));
+  } catch(e) { toast("ストレージ保存エラー: " + e.message, 4000); }
+}
+
+function loadLocal() {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY) || localStorage.getItem(STORAGE_KEY + "-bak");
+    if (raw) state = { ...state, ...JSON.parse(raw) };
+  } catch(e) {}
+}
+
+// ─── JSONBIN SYNC ─────────────────────────────────────────────────────────────
+const BIN_BASE = "https://api.jsonbin.io/v3";
+
+async function syncPull() {
+  if (!syncId) return false;
+  try {
+    const r = await fetch(`${BIN_BASE}/b/${syncId}/latest`, {
+      headers: { "X-Master-Key": "$2a$10$placeholder" }
+    });
+    if (!r.ok) {
+      // Try without master key (public bin)
+      const r2 = await fetch(`${BIN_BASE}/b/${syncId}/latest`);
+      if (!r2.ok) return false;
+      const j = await r2.json();
+      return j.record || null;
+    }
+    const j = await r.json();
+    return j.record || null;
+  } catch(e) { return false; }
+}
+
+async function syncPush(data) {
+  if (!syncId) return false;
+  try {
+    const r = await fetch(`${BIN_BASE}/b/${syncId}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json", "X-Bin-Versioning": "false" },
+      body: JSON.stringify(data)
+    });
+    return r.ok;
+  } catch(e) { return false; }
+}
+
+async function createBin(data) {
+  try {
+    const r = await fetch(`${BIN_BASE}/b`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "X-Bin-Name": "jobs-data", "X-Bin-Private": "false" },
+      body: JSON.stringify(data)
+    });
+    if (!r.ok) return null;
+    const j = await r.json();
+    return j.metadata?.id || null;
+  } catch(e) { return null; }
+}
+
+function schedulePush() {
+  syncState = "pending";
+  updateSyncIndicator();
+  clearTimeout(syncTimer);
+  syncTimer = setTimeout(async () => {
+    if (!syncId) return;
+    const ok = await syncPush(state);
+    syncState = ok ? "ok" : "error";
+    updateSyncIndicator();
+  }, 3000);
+}
+
+function updateSyncIndicator() {
+  const el = document.getElementById("sync-ind");
+  if (!el) return;
+  const dot = el.querySelector(".sync-dot");
+  const txt = el.querySelector(".sync-txt");
+  if (!dot || !txt) return;
+  dot.className = "sync-dot";
+  if (syncId) {
+    if (syncState === "ok")      { dot.classList.add("sync-ok");      txt.textContent = "同期済"; }
+    else if (syncState === "pending"){ dot.classList.add("sync-pending"); txt.textContent = "同期中…"; }
+    else if (syncState === "error")  { dot.classList.add("sync-pending"); txt.textContent = "同期エラー"; }
+  } else {
+    dot.classList.add("sync-off"); txt.textContent = "未設定";
+  }
+}
+
+// ─── AI (Gemini direct) ───────────────────────────────────────────────────────
+async function callGemini(system, userMsg) {
+  const key   = localStorage.getItem("jobs-gemini-key") || "";
+  const model = localStorage.getItem("jobs-gemini-model") || "gemini-2.0-flash";
+  if (!key) throw new Error("Gemini APIキーが設定されていません。設定画面から入力してください。");
+  const body = {
+    systemInstruction: { parts: [{ text: system }] },
+    contents: [{ role: "user", parts: [{ text: userMsg }] }],
+    generationConfig: { temperature: 0.7, maxOutputTokens: 4096 }
+  };
+  const r = await fetch(
+    `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${key}`,
+    { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) }
+  );
+  const j = await r.json();
+  if (!r.ok) throw new Error(j.error?.message || "Gemini APIエラー");
+  return j.candidates?.[0]?.content?.parts?.[0]?.text?.trim() || "";
+}
+
+// ─── ROUTING ──────────────────────────────────────────────────────────────────
+let currentRoute = "";
+let currentCompanyId = null;
+let currentTab = "es";
+
+function navigate(route, companyId, tab) {
+  currentRoute = route || "";
+  if (companyId !== undefined) currentCompanyId = companyId;
+  if (tab !== undefined) currentTab = tab;
+  history.pushState({}, "", "#" + currentRoute + (companyId ? "/" + companyId : ""));
+  render();
+  updateNav();
+}
+
+function updateNav() {
+  document.querySelectorAll(".nav-btn").forEach(b => {
+    const r = b.dataset.route;
+    b.classList.toggle("active", r === currentRoute.split("/")[0]);
+  });
+}
+
+function parseHash() {
+  const h = location.hash.replace("#", "") || "";
+  const parts = h.split("/");
+  currentRoute = parts[0] || "";
+  if (parts[0] === "company" && parts[1]) {
+    currentCompanyId = parts[1];
+    currentTab = parts[2] || "es";
+    currentRoute = "company";
+  }
+}
+
+// ─── RENDER ───────────────────────────────────────────────────────────────────
+function render() {
+  const v = document.getElementById("view");
+  switch (currentRoute) {
+    case "":         v.innerHTML = renderDashboard(); break;
+    case "companies":v.innerHTML = renderCompanyList(); break;
+    case "company":  v.innerHTML = renderCompanyDetail(); break;
+    case "schedule": v.innerHTML = renderSchedule(); break;
+    case "settings": v.innerHTML = renderSettings(); break;
+    default:         v.innerHTML = renderDashboard();
+  }
+  v.scrollTop = 0;
+}
+
+// ─── DASHBOARD ────────────────────────────────────────────────────────────────
+function renderDashboard() {
+  const total = state.companies.length;
+  const active = state.companies.filter(c => c.status > 0 && c.status < 4).length;
+  const offer  = state.companies.filter(c => c.status === 4).length;
+  const ng     = state.companies.filter(c => c.status === 5 || c.status === 6).length;
+
+  const recent = [...state.companies]
+    .sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0))
+    .slice(0, 5);
+
+  const todayStr = new Date().toDateString();
+  const upcoming = state.schedules
+    .filter(s => new Date(s.date) >= new Date() || new Date(s.date).toDateString() === todayStr)
+    .sort((a, b) => new Date(a.date) - new Date(b.date))
+    .slice(0, 5);
+
+  return `
+<div class="page-header">
+  <h1>ダッシュボード</h1>
+  <span id="sync-ind" style="display:flex;align-items:center;font-size:12px;color:var(--text2)">
+    <span class="sync-dot ${syncId ? (syncState==='ok'?'sync-ok':'sync-pending') : 'sync-off'}"></span>
+    <span class="sync-txt">${syncId ? (syncState==='ok'?'同期済':'同期中…') : '未設定'}</span>
+  </span>
+</div>
+<div class="grid2" style="margin-bottom:14px">
+  <div class="stat-card"><div class="stat-num">${total}</div><div class="stat-label">企業数</div></div>
+  <div class="stat-card"><div class="stat-num" style="color:var(--orange)">${active}</div><div class="stat-label">選考中</div></div>
+  <div class="stat-card"><div class="stat-num" style="color:var(--green)">${offer}</div><div class="stat-label">内定</div></div>
+  <div class="stat-card"><div class="stat-num" style="color:var(--red)">${ng}</div><div class="stat-label">不合格/辞退</div></div>
+</div>
+
+${upcoming.length ? `
+<div class="card" style="margin-bottom:14px">
+  <div style="font-weight:700;margin-bottom:10px;font-size:14px">📅 直近のイベント</div>
+  ${upcoming.map(s => {
+    const c = state.companies.find(x => x.id === s.companyId);
+    return `<div style="display:flex;gap:10px;padding:7px 0;border-bottom:1px solid var(--border);align-items:center">
+      <div style="font-size:12px;color:var(--accent);min-width:90px">${fmtDate(s.date)}</div>
+      <div style="flex:1;min-width:0">
+        <div style="font-size:13px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(s.title)}</div>
+        ${c ? `<div style="font-size:11px;color:var(--text3)">${esc(c.name)}</div>` : ""}
+      </div>
+    </div>`;
+  }).join("")}
+</div>` : ""}
+
+<div class="card">
+  <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
+    <div style="font-weight:700;font-size:14px">🏢 最近の企業</div>
+    <button class="btn btn-secondary btn-xs" onclick="navigate('companies')">全て見る</button>
+  </div>
+  ${recent.length === 0 ? `<div style="color:var(--text3);font-size:13px;text-align:center;padding:20px 0">企業を追加してスタート</div>` :
+    recent.map(c => companyListItem(c)).join("")}
+</div>
+<button class="btn btn-primary" style="width:100%;margin-top:10px" onclick="showAddCompany()">
+  ＋ 企業を追加
+</button>`;
+}
+
+// ─── COMPANY LIST ─────────────────────────────────────────────────────────────
+function renderCompanyList() {
+  const q = (window._searchQ || "").toLowerCase();
+  const filtered = state.companies.filter(c =>
+    !q || c.name.toLowerCase().includes(q) || (c.industry || "").toLowerCase().includes(q)
+  ).sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0));
+
+  return `
+<div class="page-header">
+  <h1>企業一覧 <span style="color:var(--text3);font-size:14px">${state.companies.length}社</span></h1>
+  <button class="btn btn-primary btn-sm" onclick="showAddCompany()">＋ 追加</button>
+</div>
+<div class="search-box">
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
+  <input type="search" placeholder="企業名・業界で検索…" value="${esc(q)}" oninput="window._searchQ=this.value;render()">
+</div>
+${filtered.length === 0 ? `<div style="color:var(--text3);font-size:13px;text-align:center;padding:40px 0">企業が見つかりません</div>` :
+  filtered.map(c => companyListItem(c)).join("")}`;
+}
+
+function companyListItem(c) {
+  const statusLabel = STATUS_LABELS[c.status] || "未着手";
+  const statusClass = STATUS_COLORS[c.status] || "s-0";
+  const esCount = (c.esEntries || []).length;
+  return `<div class="company-item" onclick="navigate('company','${c.id}','es')">
+    <div class="company-icon">${industryIcon(c.industry)}</div>
+    <div class="company-info">
+      <div class="company-name">${esc(c.name)}</div>
+      <div class="company-meta">${c.industry ? esc(c.industry) + " · " : ""}ES${esCount}件</div>
+    </div>
+    <div style="text-align:right;flex-shrink:0">
+      <div class="badge badge-gray ${statusClass}" style="font-size:11px">${statusLabel}</div>
+    </div>
+  </div>`;
+}
+
+function industryIcon(industry) {
+  const map = {"IT・通信":"💻","金融・保険":"💴","コンサルティング":"📊","メーカー（電機・機械）":"⚙️","メーカー（食品・日用品）":"🍱","商社":"🌐","小売・流通":"🛒","広告・メディア":"📣","建設・不動産":"🏗️","医療・製薬":"💊","エネルギー":"⚡","官公庁・公共":"🏛️","教育":"📚"};
+  return map[industry] || "🏢";
+}
+
+// ─── COMPANY DETAIL ───────────────────────────────────────────────────────────
+function renderCompanyDetail() {
+  const c = state.companies.find(x => x.id === currentCompanyId);
+  if (!c) return `<div class="page-header"><button class="back-btn" onclick="navigate('companies')">←</button><h1>企業が見つかりません</h1></div>`;
+
+  const tabs = [
+    { id: "es", label: "ES" },
+    { id: "interview", label: "面接" },
+    { id: "ai", label: "AIツール" },
+    { id: "info", label: "情報" }
+  ];
+
+  let content = "";
+  switch (currentTab) {
+    case "es":        content = renderESTab(c); break;
+    case "interview": content = renderInterviewTab(c); break;
+    case "ai":        content = renderAITab(c); break;
+    case "info":      content = renderInfoTab(c); break;
+  }
+
+  return `
+<div class="page-header">
+  <button class="back-btn" onclick="navigate('companies')">
+    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="15 18 9 12 15 6"/></svg>
+  </button>
+  <div style="flex:1;min-width:0">
+    <h1 style="font-size:17px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(c.name)}</h1>
+    <div style="font-size:12px;color:var(--text2)">
+      <span class="${STATUS_COLORS[c.status] || 's-0'}">${STATUS_LABELS[c.status] || '未着手'}</span>
+      ${c.industry ? " · " + esc(c.industry) : ""}
+    </div>
+  </div>
+  <button class="btn btn-secondary btn-xs" onclick="showEditCompany('${c.id}')">編集</button>
+</div>
+<div class="tabs">${tabs.map(t => `<button class="tab${currentTab===t.id?' active':''}" onclick="navigate('company','${c.id}','${t.id}')">${t.label}</button>`).join("")}</div>
+${content}`;
+}
+
+// ES TAB
+function renderESTab(c) {
+  const entries = c.esEntries || [];
+  return `
+<button class="btn btn-primary" style="width:100%;margin-bottom:12px" onclick="showAddESEntry('${c.id}')">＋ ES設問を追加</button>
+${entries.length === 0 ? `<div class="card" style="text-align:center;color:var(--text3);padding:30px">ES設問がありません</div>` :
+  entries.map((e, i) => `
+<div class="es-entry">
+  <div class="es-entry-header">
+    <div class="es-entry-q">${esc(e.question)}</div>
+    <div class="char-count ${e.maxChars ? (e.answer && e.answer.length > e.maxChars ? 'char-over' : 'char-ok') : ''}">${e.answer ? e.answer.length : 0}${e.maxChars ? '/'+e.maxChars+'字' : '字'}</div>
+  </div>
+  <div style="font-size:13px;color:var(--text2);margin-bottom:10px;white-space:pre-wrap">${e.answer ? esc(e.answer).substring(0, 120) + (e.answer.length > 120 ? "…" : "") : '<span style="color:var(--text3)">未記入</span>'}</div>
+  <div style="display:flex;gap:6px;flex-wrap:wrap">
+    <button class="btn btn-secondary btn-xs" onclick="showEditESEntry('${c.id}',${i})">編集</button>
+    <button class="btn btn-secondary btn-xs" onclick="showESReview('${c.id}',${i})">✨ 添削</button>
+    <button class="btn btn-secondary btn-xs" onclick="showESAdvice('${c.id}',${i})">💡 アドバイス</button>
+    <button class="btn btn-danger btn-xs" onclick="deleteESEntry('${c.id}',${i})">削除</button>
+  </div>
+</div>`).join("")}`;
+}
+
+// INTERVIEW TAB
+function renderInterviewTab(c) {
+  const notes = c.interviewNotes || [];
+  const questions = c.interviewQuestions || [];
+  return `
+<button class="btn btn-primary" style="width:100%;margin-bottom:12px" onclick="showAddInterview('${c.id}')">＋ 面接メモを追加</button>
+${notes.length === 0 && questions.length === 0 ? `<div class="card" style="text-align:center;color:var(--text3);padding:30px">面接メモがありません</div>` : ""}
+${questions.length > 0 ? `
+<div class="card" style="margin-bottom:10px">
+  <div style="font-weight:700;font-size:14px;margin-bottom:10px">📋 想定質問</div>
+  ${questions.map((q, i) => `
+  <div style="padding:8px 0;border-bottom:1px solid var(--border)">
+    <div style="font-size:13px;font-weight:600;margin-bottom:4px">Q${i+1}. ${esc(q.question)}</div>
+    ${q.answer ? `<div style="font-size:13px;color:var(--text2);white-space:pre-wrap">${esc(q.answer)}</div>` : `<div style="font-size:12px;color:var(--text3)">未記入</div>`}
+    <div style="display:flex;gap:6px;margin-top:6px">
+      <button class="btn btn-secondary btn-xs" onclick="showEditIVQuestion('${c.id}',${i})">編集</button>
+      <button class="btn btn-danger btn-xs" onclick="deleteIVQuestion('${c.id}',${i})">削除</button>
+    </div>
+  </div>`).join("")}
+</div>` : ""}
+${notes.map((n, i) => `
+<div class="card" style="margin-bottom:10px">
+  <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+    <div style="font-size:13px;color:var(--text2)">${fmtDate(n.date)} · ${n.round || "面接"}</div>
+    <button class="btn btn-danger btn-xs" onclick="deleteIVNote('${c.id}',${i})">削除</button>
+  </div>
+  <div style="font-size:13px;white-space:pre-wrap">${esc(n.memo)}</div>
+</div>`).join("")}`;
+}
+
+// AI TAB
+function renderAITab(c) {
+  return `
+<div style="display:flex;flex-direction:column;gap:10px">
+  <div class="card card-sm" style="cursor:pointer" onclick="showAITool('${c.id}','strategy')">
+    <div style="font-weight:700">📈 ES戦略アドバイス</div>
+    <div style="font-size:12px;color:var(--text2);margin-top:4px">志望動機・ES全体の戦略を分析</div>
+  </div>
+  <div class="card card-sm" style="cursor:pointer" onclick="showAITool('${c.id}','selfpr')">
+    <div style="font-weight:700">💪 自己PR最適化</div>
+    <div style="font-size:12px;color:var(--text2);margin-top:4px">この企業向けに自己PRを最適化</div>
+  </div>
+  <div class="card card-sm" style="cursor:pointer" onclick="showAITool('${c.id}','interview-tips')">
+    <div style="font-weight:700">🎤 面接対策</div>
+    <div style="font-size:12px;color:var(--text2);margin-top:4px">想定質問と回答のポイント</div>
+  </div>
+  <div class="card card-sm" style="cursor:pointer" onclick="showAITool('${c.id}','gap')">
+    <div style="font-weight:700">🔍 ギャップ分析</div>
+    <div style="font-size:12px;color:var(--text2);margin-top:4px">求める人材と自分のギャップを分析</div>
+  </div>
+  <div class="card card-sm" style="cursor:pointer" onclick="showAITool('${c.id}','email')">
+    <div style="font-weight:700">✉️ メール文面生成</div>
+    <div style="font-size:12px;color:var(--text2);margin-top:4px">お礼・確認・辞退メールを生成</div>
+  </div>
+  <div class="card card-sm" style="cursor:pointer" onclick="showMockInterview('${c.id}')">
+    <div style="font-weight:700">🎭 模擬面接</div>
+    <div style="font-size:12px;color:var(--text2);margin-top:4px">AIと面接練習（対話形式）</div>
+  </div>
+</div>`;
+}
+
+// INFO TAB
+function renderInfoTab(c) {
+  const fields = [
+    ["業界", c.industry],
+    ["ステータス", STATUS_LABELS[c.status]],
+    ["ES締切", c.esDue ? fmtDate(c.esDue) : null],
+    ["URL", c.url ? `<a href="${esc(c.url)}" target="_blank" style="color:var(--accent)">${esc(c.url)}</a>` : null],
+    ["メモ", c.notes],
+    ["求める人材", c.wantedPerson],
+    ["事業内容", c.business],
+  ];
+  return `
+<button class="btn btn-secondary" style="width:100%;margin-bottom:12px" onclick="showEditCompany('${c.id}')">企業情報を編集</button>
+${fields.filter(([,v]) => v).map(([k, v]) => `
+<div class="info-row">
+  <div class="info-key">${k}</div>
+  <div class="info-val">${v}</div>
+</div>`).join("")}
+${!c.notes && !c.wantedPerson && !c.business ? `<div style="color:var(--text3);font-size:13px;text-align:center;padding:20px 0">情報を追加してください</div>` : ""}`;
+}
+
+// ─── SCHEDULE ─────────────────────────────────────────────────────────────────
+function renderSchedule() {
+  const sorted = [...state.schedules].sort((a, b) => new Date(a.date) - new Date(b.date));
+  const past    = sorted.filter(s => new Date(s.date) < new Date() && new Date(s.date).toDateString() !== new Date().toDateString());
+  const upcoming= sorted.filter(s => new Date(s.date) >= new Date() || new Date(s.date).toDateString() === new Date().toDateString());
+
+  function renderSched(list) {
+    return list.map((s, idx) => {
+      const c = state.companies.find(x => x.id === s.companyId);
+      const i = state.schedules.indexOf(s);
+      return `<div class="card card-sm" style="margin-bottom:8px;display:flex;gap:12px;align-items:flex-start">
+        <div style="text-align:center;min-width:50px">
+          <div style="font-size:18px;font-weight:800;color:var(--accent)">${new Date(s.date).getDate()}</div>
+          <div style="font-size:11px;color:var(--text2)">${['日','月','火','水','木','金','土'][new Date(s.date).getDay()]}曜</div>
+        </div>
+        <div style="flex:1;min-width:0">
+          <div style="font-weight:600;font-size:14px">${esc(s.title)}</div>
+          ${c ? `<div style="font-size:12px;color:var(--text2)">${esc(c.name)}</div>` : ""}
+          ${s.memo ? `<div style="font-size:12px;color:var(--text3);margin-top:4px">${esc(s.memo)}</div>` : ""}
+        </div>
+        <button class="btn btn-danger btn-xs" onclick="deleteSched(${i})">削除</button>
+      </div>`;
+    }).join("");
+  }
+
+  return `
+<div class="page-header">
+  <h1>スケジュール</h1>
+  <button class="btn btn-primary btn-sm" onclick="showAddSched()">＋ 追加</button>
+</div>
+${upcoming.length === 0 && past.length === 0 ? `<div class="card" style="text-align:center;color:var(--text3);padding:40px">予定がありません</div>` : ""}
+${upcoming.length > 0 ? `<div style="font-size:12px;color:var(--text2);font-weight:700;margin-bottom:8px;text-transform:uppercase">今後の予定</div>${renderSched(upcoming)}` : ""}
+${past.length > 0 ? `<hr class="divider"><div style="font-size:12px;color:var(--text3);font-weight:700;margin-bottom:8px">過去の予定</div>${renderSched(past)}` : ""}`;
+}
+
+// ─── SETTINGS ─────────────────────────────────────────────────────────────────
+function renderSettings() {
+  const gemKey   = localStorage.getItem("jobs-gemini-key") || "";
+  const gemModel = localStorage.getItem("jobs-gemini-model") || "gemini-2.0-flash";
+  const p = state.profile;
+
+  return `
+<div class="page-header"><h1>設定</h1></div>
+
+<div class="card" style="margin-bottom:12px">
+  <div style="font-weight:700;margin-bottom:12px">🔑 Gemini API</div>
+  <div class="form-group">
+    <label class="form-label">APIキー</label>
+    <input class="form-input" type="password" id="s-gem-key" value="${esc(gemKey)}" placeholder="AIzaSy...">
+  </div>
+  <div class="form-group">
+    <label class="form-label">モデル</label>
+    <select class="form-select" id="s-gem-model">
+      ${["gemini-2.0-flash","gemini-2.0-flash-lite","gemini-1.5-pro","gemini-1.5-flash"].map(m => `<option value="${m}" ${gemModel===m?'selected':''}>${m}</option>`).join("")}
+    </select>
+  </div>
+  <button class="btn btn-primary btn-sm" onclick="saveGeminiSettings()">保存</button>
+</div>
+
+<div class="card" style="margin-bottom:12px">
+  <div style="font-weight:700;margin-bottom:12px">☁️ クラウド同期（JSONBin）</div>
+  ${syncId ? `
+  <div style="background:var(--surface2);border-radius:var(--radius-sm);padding:10px;margin-bottom:10px;font-size:13px">
+    <div style="color:var(--text2);margin-bottom:4px">同期ID</div>
+    <div style="font-family:monospace;word-break:break-all;font-size:12px">${esc(syncId)}</div>
+  </div>
+  <div class="form-hint" style="margin-bottom:10px">この同期IDを別のデバイスの設定画面に貼り付けると同期されます</div>
+  <div style="display:flex;gap:8px;flex-wrap:wrap">
+    <button class="btn btn-primary btn-sm" onclick="forceSyncPull()">↓ 最新データを取得</button>
+    <button class="btn btn-secondary btn-sm" onclick="forceSyncPush()">↑ 今すぐ保存</button>
+    <button class="btn btn-danger btn-sm" onclick="disconnectSync()">同期を解除</button>
+  </div>` : `
+  <div class="form-hint" style="margin-bottom:12px">JSONBin.ioを使ってiPhone/PCで自動同期します。無料・アカウント不要。</div>
+  <div class="form-group">
+    <label class="form-label">既存の同期ID（他デバイスから移行）</label>
+    <input class="form-input" id="s-sync-id" placeholder="同期IDを入力してください">
+  </div>
+  <div style="display:flex;gap:8px;flex-wrap:wrap">
+    <button class="btn btn-primary btn-sm" onclick="connectSync()">接続</button>
+    <button class="btn btn-green btn-sm" onclick="createNewSync()">新規作成</button>
+  </div>`}
+</div>
+
+<div class="card" style="margin-bottom:12px">
+  <div style="font-weight:700;margin-bottom:12px">👤 プロフィール</div>
+  <div class="form-group">
+    <label class="form-label">ガクチカ</label>
+    <textarea class="form-textarea" id="s-gakuchika" rows="3" placeholder="学生時代に力を入れたこと…">${esc(p.gakuchika||'')}</textarea>
+  </div>
+  <div class="form-group">
+    <label class="form-label">自己PR</label>
+    <textarea class="form-textarea" id="s-selfpr" rows="3" placeholder="自己PR…">${esc(p.selfPr||'')}</textarea>
+  </div>
+  <div class="form-group">
+    <label class="form-label">志望動機の軸</label>
+    <textarea class="form-textarea" id="s-motivation" rows="2" placeholder="就職活動の軸…">${esc(p.motivation||'')}</textarea>
+  </div>
+  <div class="form-group">
+    <label class="form-label">スキル・資格</label>
+    <input class="form-input" id="s-skills" value="${esc(p.skills||'')}" placeholder="TOEIC 800, Python など">
+  </div>
+  <button class="btn btn-primary btn-sm" onclick="saveProfile()">保存</button>
+</div>
+
+<div class="card" style="margin-bottom:12px">
+  <div style="font-weight:700;margin-bottom:12px">💾 データ管理</div>
+  <div style="display:flex;gap:8px;flex-wrap:wrap">
+    <button class="btn btn-secondary btn-sm" onclick="exportJSON()">JSONエクスポート</button>
+    <button class="btn btn-secondary btn-sm" onclick="document.getElementById('import-file').click()">JSONインポート</button>
+    <button class="btn btn-danger btn-sm" onclick="confirmClearData()">データ削除</button>
+  </div>
+  <input type="file" id="import-file" accept=".json" style="display:none" onchange="importJSON(this)">
+  <div class="form-hint" style="margin-top:8px">${state.companies.length}社 · スケジュール${state.schedules.length}件</div>
+</div>`;
+}
+
+// ─── MODALS ───────────────────────────────────────────────────────────────────
+function showModal(html, center = false) {
+  closeModal();
+  const ov = document.createElement("div");
+  ov.className = "modal-overlay" + (center ? " center" : "");
+  ov.id = "modal-overlay";
+  ov.innerHTML = `<div class="modal">${html}</div>`;
+  ov.addEventListener("click", e => { if (e.target === ov) closeModal(); });
+  document.body.appendChild(ov);
+}
+function closeModal() {
+  const m = document.getElementById("modal-overlay");
+  if (m) m.remove();
+}
+
+// Add/Edit Company
+function showAddCompany() {
+  showModal(companyForm(null));
+}
+function showEditCompany(id) {
+  const c = state.companies.find(x => x.id === id);
+  showModal(companyForm(c));
+}
+function companyForm(c) {
+  const isEdit = !!c;
+  return `
+<div class="modal-title">${isEdit ? '企業を編集' : '企業を追加'}</div>
+<div class="form-group">
+  <label class="form-label">企業名 *</label>
+  <input class="form-input" id="cf-name" value="${esc(c?.name||'')}" placeholder="例: 株式会社〇〇">
+</div>
+<div class="form-group">
+  <label class="form-label">業界</label>
+  <select class="form-select" id="cf-industry">
+    <option value="">選択してください</option>
+    ${INDUSTRIES.map(i => `<option value="${i}" ${c?.industry===i?'selected':''}>${i}</option>`).join("")}
+  </select>
+</div>
+<div class="form-group">
+  <label class="form-label">ステータス</label>
+  <select class="form-select" id="cf-status">
+    ${STATUS_LABELS.map((l, i) => `<option value="${i}" ${(c?.status||0)===i?'selected':''}>${l}</option>`).join("")}
+  </select>
+</div>
+<div class="form-group">
+  <label class="form-label">ES締切</label>
+  <input class="form-input" id="cf-esdue" type="date" value="${c?.esDue||''}">
+</div>
+<div class="form-group">
+  <label class="form-label">URL</label>
+  <input class="form-input" id="cf-url" type="url" value="${esc(c?.url||'')}" placeholder="https://...">
+</div>
+<div class="form-group">
+  <label class="form-label">求める人材</label>
+  <textarea class="form-textarea" id="cf-wanted" rows="2" placeholder="企業が求める人物像…">${esc(c?.wantedPerson||'')}</textarea>
+</div>
+<div class="form-group">
+  <label class="form-label">事業内容</label>
+  <textarea class="form-textarea" id="cf-biz" rows="2" placeholder="主な事業内容…">${esc(c?.business||'')}</textarea>
+</div>
+<div class="form-group">
+  <label class="form-label">メモ</label>
+  <textarea class="form-textarea" id="cf-notes" rows="2">${esc(c?.notes||'')}</textarea>
+</div>
+<div style="display:flex;gap:8px;margin-top:4px">
+  <button class="btn btn-primary" style="flex:1" onclick="saveCompany('${c?.id||''}')">保存</button>
+  <button class="btn btn-secondary" onclick="closeModal()">キャンセル</button>
+</div>`;
+}
+
+function saveCompany(id) {
+  const name = document.getElementById("cf-name").value.trim();
+  if (!name) { toast("企業名を入力してください"); return; }
+  if (id) {
+    const c = state.companies.find(x => x.id === id);
+    Object.assign(c, {
+      name,
+      industry: document.getElementById("cf-industry").value,
+      status: +document.getElementById("cf-status").value,
+      esDue: document.getElementById("cf-esdue").value,
+      url: document.getElementById("cf-url").value.trim(),
+      wantedPerson: document.getElementById("cf-wanted").value.trim(),
+      business: document.getElementById("cf-biz").value.trim(),
+      notes: document.getElementById("cf-notes").value.trim(),
+      updatedAt: Date.now()
+    });
+  } else {
+    state.companies.push({
+      id: uid(), name,
+      industry: document.getElementById("cf-industry").value,
+      status: +document.getElementById("cf-status").value,
+      esDue: document.getElementById("cf-esdue").value,
+      url: document.getElementById("cf-url").value.trim(),
+      wantedPerson: document.getElementById("cf-wanted").value.trim(),
+      business: document.getElementById("cf-biz").value.trim(),
+      notes: document.getElementById("cf-notes").value.trim(),
+      esEntries: [], interviewNotes: [], interviewQuestions: [],
+      createdAt: Date.now(), updatedAt: Date.now()
+    });
+  }
+  persist();
+  closeModal();
+  render();
+  toast(id ? "更新しました" : "企業を追加しました");
+}
+
+// ES Entry
+function showAddESEntry(companyId) {
+  showModal(esEntryForm(companyId, null, -1));
+}
+function showEditESEntry(companyId, idx) {
+  const c = state.companies.find(x => x.id === companyId);
+  showModal(esEntryForm(companyId, c.esEntries[idx], idx));
+}
+function esEntryForm(companyId, entry, idx) {
+  return `
+<div class="modal-title">${idx >= 0 ? 'ES設問を編集' : 'ES設問を追加'}</div>
+<div class="form-group">
+  <label class="form-label">設問 *</label>
+  <input class="form-input" id="ef-q" value="${esc(entry?.question||'')}" placeholder="例: 学生時代に最も力を入れたことを教えてください">
+</div>
+<div class="form-group">
+  <label class="form-label">文字数制限</label>
+  <input class="form-input" id="ef-max" type="number" value="${entry?.maxChars||''}" placeholder="例: 400（制限なしは空白）">
+</div>
+<div class="form-group">
+  <label class="form-label">回答</label>
+  <textarea class="form-textarea" id="ef-ans" rows="6" placeholder="回答を入力…" oninput="updateCharCount(this)">${esc(entry?.answer||'')}</textarea>
+  <div class="form-hint" id="ef-char">0文字</div>
+</div>
+<div style="display:flex;gap:8px;margin-top:4px">
+  <button class="btn btn-primary" style="flex:1" onclick="saveESEntry('${companyId}',${idx})">保存</button>
+  <button class="btn btn-secondary" onclick="closeModal()">キャンセル</button>
+</div>
+<script>
+(function(){
+  var ta=document.getElementById('ef-ans');
+  var mc=document.getElementById('ef-max');
+  var ch=document.getElementById('ef-char');
+  function upd(){
+    var n=ta.value.length;
+    var m=parseInt(mc.value)||0;
+    ch.textContent=n+(m?'/'+m:'')+'文字';
+    ch.style.color=m&&n>m?'var(--red)':m?'var(--green)':'var(--text3)';
+  }
+  ta.addEventListener('input',upd);
+  mc.addEventListener('input',upd);
+  upd();
+})();
+<\/script>`;
+}
+
+function updateCharCount(ta) {}
+
+function saveESEntry(companyId, idx) {
+  const q = document.getElementById("ef-q").value.trim();
+  if (!q) { toast("設問を入力してください"); return; }
+  const c = state.companies.find(x => x.id === companyId);
+  const entry = {
+    question: q,
+    answer: document.getElementById("ef-ans").value,
+    maxChars: parseInt(document.getElementById("ef-max").value) || null,
+    updatedAt: Date.now()
+  };
+  if (idx >= 0) c.esEntries[idx] = entry;
+  else { c.esEntries = c.esEntries || []; c.esEntries.push(entry); }
+  c.updatedAt = Date.now();
+  persist();
+  closeModal();
+  navigate("company", companyId, "es");
+  toast("保存しました");
+}
+
+function deleteESEntry(companyId, idx) {
+  if (!confirm("このES設問を削除しますか？")) return;
+  const c = state.companies.find(x => x.id === companyId);
+  c.esEntries.splice(idx, 1);
+  c.updatedAt = Date.now();
+  persist();
+  navigate("company", companyId, "es");
+  toast("削除しました");
+}
+
+// Interview
+function showAddInterview(companyId) {
+  showModal(`
+<div class="modal-title">面接メモを追加</div>
+<div class="form-group">
+  <label class="form-label">種別</label>
+  <select class="form-select" id="iv-round">
+    ${["一次面接","二次面接","最終面接","GD","説明会","OB訪問","その他"].map(r => `<option>${r}</option>`).join("")}
+  </select>
+</div>
+<div class="form-group">
+  <label class="form-label">日時</label>
+  <input class="form-input" id="iv-date" type="date" value="${today()}">
+</div>
+<div class="form-group">
+  <label class="form-label">メモ</label>
+  <textarea class="form-textarea" id="iv-memo" rows="5" placeholder="面接での質問、感想など…"></textarea>
+</div>
+<div style="display:flex;gap:8px;margin-top:4px">
+  <button class="btn btn-primary" style="flex:1" onclick="saveIVNote('${companyId}')">保存</button>
+  <button class="btn btn-secondary" onclick="closeModal()">キャンセル</button>
+</div>`);
+}
+
+function saveIVNote(companyId) {
+  const c = state.companies.find(x => x.id === companyId);
+  c.interviewNotes = c.interviewNotes || [];
+  c.interviewNotes.push({
+    round: document.getElementById("iv-round").value,
+    date: document.getElementById("iv-date").value,
+    memo: document.getElementById("iv-memo").value.trim()
+  });
+  c.updatedAt = Date.now();
+  persist();
+  closeModal();
+  navigate("company", companyId, "interview");
+  toast("保存しました");
+}
+
+function deleteIVNote(companyId, idx) {
+  if (!confirm("削除しますか？")) return;
+  const c = state.companies.find(x => x.id === companyId);
+  c.interviewNotes.splice(idx, 1);
+  persist();
+  navigate("company", companyId, "interview");
+}
+
+function showEditIVQuestion(companyId, idx) {
+  const c = state.companies.find(x => x.id === companyId);
+  const q = c.interviewQuestions[idx];
+  showModal(`
+<div class="modal-title">想定質問を編集</div>
+<div class="form-group">
+  <label class="form-label">質問</label>
+  <input class="form-input" id="ivq-q" value="${esc(q.question)}">
+</div>
+<div class="form-group">
+  <label class="form-label">回答メモ</label>
+  <textarea class="form-textarea" id="ivq-a" rows="4">${esc(q.answer||'')}</textarea>
+</div>
+<div style="display:flex;gap:8px">
+  <button class="btn btn-primary" style="flex:1" onclick="saveIVQuestion('${companyId}',${idx})">保存</button>
+  <button class="btn btn-secondary" onclick="closeModal()">キャンセル</button>
+</div>`);
+}
+
+function saveIVQuestion(companyId, idx) {
+  const c = state.companies.find(x => x.id === companyId);
+  c.interviewQuestions[idx] = {
+    question: document.getElementById("ivq-q").value.trim(),
+    answer: document.getElementById("ivq-a").value.trim()
+  };
+  persist();
+  closeModal();
+  navigate("company", companyId, "interview");
+}
+
+function deleteIVQuestion(companyId, idx) {
+  if (!confirm("削除しますか？")) return;
+  const c = state.companies.find(x => x.id === companyId);
+  c.interviewQuestions.splice(idx, 1);
+  persist();
+  navigate("company", companyId, "interview");
+}
+
+// Schedule
+function showAddSched() {
+  showModal(`
+<div class="modal-title">スケジュールを追加</div>
+<div class="form-group">
+  <label class="form-label">タイトル *</label>
+  <input class="form-input" id="sc-title" placeholder="例: 一次面接">
+</div>
+<div class="form-group">
+  <label class="form-label">日時 *</label>
+  <input class="form-input" id="sc-date" type="datetime-local">
+</div>
+<div class="form-group">
+  <label class="form-label">関連企業</label>
+  <select class="form-select" id="sc-company">
+    <option value="">なし</option>
+    ${state.companies.map(c => `<option value="${c.id}">${esc(c.name)}</option>`).join("")}
+  </select>
+</div>
+<div class="form-group">
+  <label class="form-label">メモ</label>
+  <input class="form-input" id="sc-memo" placeholder="場所、持ち物など">
+</div>
+<div style="display:flex;gap:8px">
+  <button class="btn btn-primary" style="flex:1" onclick="saveSched()">保存</button>
+  <button class="btn btn-secondary" onclick="closeModal()">キャンセル</button>
+</div>`);
+}
+
+function saveSched() {
+  const title = document.getElementById("sc-title").value.trim();
+  const date  = document.getElementById("sc-date").value;
+  if (!title || !date) { toast("タイトルと日時を入力してください"); return; }
+  state.schedules.push({
+    id: uid(), title, date,
+    companyId: document.getElementById("sc-company").value,
+    memo: document.getElementById("sc-memo").value.trim()
+  });
+  persist();
+  closeModal();
+  navigate("schedule");
+  toast("追加しました");
+}
+
+function deleteSched(idx) {
+  if (!confirm("削除しますか？")) return;
+  state.schedules.splice(idx, 1);
+  persist();
+  navigate("schedule");
+}
+
+// ─── AI TOOLS ─────────────────────────────────────────────────────────────────
+async function showESReview(companyId, idx) {
+  const c = state.companies.find(x => x.id === companyId);
+  const e = c.esEntries[idx];
+  if (!e.answer?.trim()) { toast("回答を入力してから添削してください"); return; }
+  const charNote = e.maxChars ? `（${e.maxChars}字以内）` : "";
+  const system = buildSystemPrompt(c);
+  const user = `以下のES設問と回答を添削してください。\n\n【設問】${e.question}\n【文字数制限】${e.maxChars ? e.maxChars+'字以内' : '指定なし'}\n【回答】${e.answer}\n\n以下の形式で返してください：\n1. 総評（3行以内）\n2. 良い点\n3. 改善点\n4. 改善後の例文${charNote}`;
+  await runAIModal(`✨ ES添削：${e.question.substring(0,30)}…`, system, user);
+}
+
+async function showESAdvice(companyId, idx) {
+  const c = state.companies.find(x => x.id === companyId);
+  const e = c.esEntries[idx];
+  const charNote = e.maxChars ? `（${e.maxChars}字程度の例文を含む）` : "";
+  const system = buildSystemPrompt(c);
+  const user = `以下のES設問に対するアドバイスをください。\n\n【設問】${e.question}\n【文字数制限】${e.maxChars ? e.maxChars+'字以内' : '指定なし'}\n${e.answer ? `【現在の回答】${e.answer}\n` : ''}\n書き方のポイントと参考例文${charNote}を教えてください。`;
+  await runAIModal(`💡 ESアドバイス：${e.question.substring(0,30)}…`, system, user);
+}
+
+async function showAITool(companyId, tool) {
+  const c = state.companies.find(x => x.id === companyId);
+  const system = buildSystemPrompt(c);
+  let user = "";
+  let title = "";
+  const profile = buildProfileText();
+  switch (tool) {
+    case "strategy":
+      title = "📈 ES戦略アドバイス";
+      user = `${c.name}向けのES・志望動機の戦略アドバイスをください。\n\n${c.wantedPerson ? `【求める人材】${c.wantedPerson}\n` : ""}${c.business ? `【事業内容】${c.business}\n` : ""}${profile ? `\n${profile}` : ""}\n\n志望動機の方向性、強調すべきポイント、差別化の観点を教えてください。`;
+      break;
+    case "selfpr":
+      title = "💪 自己PR最適化";
+      user = `${c.name}向けに自己PRを最適化してください。\n\n${profile || "プロフィール未設定"}\n\n${c.wantedPerson ? `【企業が求める人材】${c.wantedPerson}` : ""}`;
+      break;
+    case "interview-tips":
+      title = "🎤 面接対策";
+      user = `${c.name}の面接対策として、想定質問と回答のポイントを教えてください。\n\n${c.wantedPerson ? `【求める人材】${c.wantedPerson}\n` : ""}${c.business ? `【事業内容】${c.business}\n` : ""}${profile ? `\n${profile}` : ""}`;
+      break;
+    case "gap":
+      title = "🔍 ギャップ分析";
+      user = `${c.name}が求める人材と私のプロフィールのギャップを分析してください。\n\n${profile || "プロフィール未設定"}\n\n${c.wantedPerson ? `【企業が求める人材】${c.wantedPerson}` : "企業情報が入力されていません。"}`;
+      break;
+    case "email":
+      title = "✉️ メール文面生成";
+      showEmailTypeModal(companyId);
+      return;
+  }
+  await runAIModal(title, system, user);
+}
+
+function showEmailTypeModal(companyId) {
+  const c = state.companies.find(x => x.id === companyId);
+  showModal(`
+<div class="modal-title">✉️ メール文面生成</div>
+<div style="display:flex;flex-direction:column;gap:8px">
+  ${[["お礼メール（面接後）","interview-thanks"],["日程確認","schedule-confirm"],["辞退メール","decline"],["その他確認","other-confirm"]].map(([l,v]) => `
+  <button class="btn btn-secondary" style="text-align:left;justify-content:flex-start" onclick="genEmail('${companyId}','${v}')">${l}</button>`).join("")}
+</div>
+<button class="btn btn-secondary" style="width:100%;margin-top:10px" onclick="closeModal()">キャンセル</button>`);
+}
+
+async function genEmail(companyId, type) {
+  const c = state.companies.find(x => x.id === companyId);
+  const typeMap = {"interview-thanks":"面接後のお礼メール","schedule-confirm":"選考日程の確認メール","decline":"内定・選考の辞退メール","other-confirm":"その他確認メール"};
+  const system = buildSystemPrompt(c);
+  const user = `${c.name}宛に${typeMap[type]}を書いてください。丁寧で簡潔な文面にしてください。`;
+  await runAIModal(`✉️ ${typeMap[type]}`, system, user);
+}
+
+let mockHistory = [];
+
+function showMockInterview(companyId) {
+  const c = state.companies.find(x => x.id === companyId);
+  mockHistory = [];
+  const system = buildSystemPrompt(c);
+  showModal(`
+<div class="modal-title">🎭 模擬面接：${esc(c.name)}</div>
+<div id="mock-chat" style="max-height:300px;overflow-y:auto;margin-bottom:12px;display:flex;flex-direction:column;gap:8px">
+  <div style="background:var(--surface2);border-radius:8px;padding:10px;font-size:13px">面接を始めます。準備ができたら「はい、お願いします」と入力してください。</div>
+</div>
+<div style="display:flex;gap:8px">
+  <input class="form-input" id="mock-input" placeholder="回答を入力…" onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();sendMock('${companyId}',\`${esc(JSON.stringify(system).slice(1,-1))}\`)}">
+  <button class="btn btn-primary btn-sm" onclick="sendMock('${companyId}',\`${esc(JSON.stringify(system).slice(1,-1))}\`)">送信</button>
+</div>
+<button class="btn btn-secondary" style="width:100%;margin-top:8px" onclick="closeModal()">終了</button>`);
+}
+
+async function sendMock(companyId, systemEsc) {
+  const inp = document.getElementById("mock-input");
+  const msg = inp.value.trim();
+  if (!msg) return;
+  inp.value = "";
+  inp.disabled = true;
+  const chat = document.getElementById("mock-chat");
+  chat.innerHTML += `<div style="background:var(--accent);color:#fff;border-radius:8px;padding:10px;font-size:13px;align-self:flex-end;max-width:85%">${esc(msg)}</div>`;
+  mockHistory.push({ role: "user", content: msg });
+  const thinking = document.createElement("div");
+  thinking.style.cssText = "background:var(--surface2);border-radius:8px;padding:10px;font-size:13px;color:var(--text2)";
+  thinking.textContent = "考え中…";
+  chat.appendChild(thinking);
+  chat.scrollTop = chat.scrollHeight;
+
+  const c = state.companies.find(x => x.id === companyId);
+  const sys = `あなたは${c.name}の面接官です。就活生との模擬面接を行ってください。1問ずつ質問し、回答に対してフィードバックも交えながら進めてください。${buildProfileText() ? '\n\n' + buildProfileText() : ""}`;
+  try {
+    const gemKey = localStorage.getItem("jobs-gemini-key") || "";
+    const gemModel = localStorage.getItem("jobs-gemini-model") || "gemini-2.0-flash";
+    if (!gemKey) throw new Error("Gemini APIキー未設定");
+    const body = {
+      systemInstruction: { parts: [{ text: sys }] },
+      contents: mockHistory.map(m => ({ role: m.role === "assistant" ? "model" : "user", parts: [{ text: m.content }] })),
+      generationConfig: { temperature: 0.8, maxOutputTokens: 1024 }
+    };
+    const r = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${gemModel}:generateContent?key=${gemKey}`,
+      { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
+    const j = await r.json();
+    const reply = j.candidates?.[0]?.content?.parts?.[0]?.text?.trim() || "（応答なし）";
+    mockHistory.push({ role: "assistant", content: reply });
+    thinking.style.cssText = "background:var(--surface2);border-radius:8px;padding:10px;font-size:13px;white-space:pre-wrap";
+    thinking.textContent = reply;
+  } catch(e) {
+    thinking.style.color = "var(--red)";
+    thinking.textContent = "エラー: " + e.message;
+  }
+  inp.disabled = false;
+  inp.focus();
+  chat.scrollTop = chat.scrollHeight;
+}
+
+async function runAIModal(title, system, user) {
+  showModal(`
+<div class="modal-title">${esc(title)}</div>
+<div style="display:flex;align-items:center;gap:8px;color:var(--text2);font-size:13px;margin-bottom:12px">
+  <span class="spinner"></span>AIが分析中…
+</div>
+<div id="ai-out" style="display:none" class="ai-result"></div>
+<div id="ai-err" style="display:none;color:var(--red);font-size:13px"></div>
+<button class="btn btn-secondary" style="width:100%;margin-top:12px" onclick="closeModal()">閉じる</button>`, true);
+
+  try {
+    const result = await callGemini(system, user);
+    const loading = document.querySelector("#modal-overlay .spinner")?.parentElement;
+    if (loading) loading.style.display = "none";
+    const out = document.getElementById("ai-out");
+    if (out) { out.style.display = "block"; out.textContent = result; }
+  } catch(e) {
+    const loading = document.querySelector("#modal-overlay .spinner")?.parentElement;
+    if (loading) loading.style.display = "none";
+    const err = document.getElementById("ai-err");
+    if (err) { err.style.display = "block"; err.textContent = "エラー: " + e.message; }
+  }
+}
+
+function buildSystemPrompt(c) {
+  const profile = buildProfileText();
+  return `あなたは就職活動のプロフェッショナルなアドバイザーです。${c.name}（${c.industry || "業界不明"}）への就職活動を支援してください。${c.wantedPerson ? `\n\n企業が求める人材: ${c.wantedPerson}` : ""}${profile ? `\n\n${profile}` : ""}`;
+}
+
+function buildProfileText() {
+  const p = state.profile;
+  const parts = [];
+  if (p.gakuchika)  parts.push(`【ガクチカ】${p.gakuchika}`);
+  if (p.selfPr)     parts.push(`【自己PR】${p.selfPr}`);
+  if (p.motivation) parts.push(`【志望動機の軸】${p.motivation}`);
+  if (p.skills)     parts.push(`【スキル】${p.skills}`);
+  return parts.length ? "【応募者プロフィール】\n" + parts.join("\n") : "";
+}
+
+// ─── SETTINGS ACTIONS ─────────────────────────────────────────────────────────
+function saveGeminiSettings() {
+  localStorage.setItem("jobs-gemini-key", document.getElementById("s-gem-key").value.trim());
+  localStorage.setItem("jobs-gemini-model", document.getElementById("s-gem-model").value);
+  toast("Gemini設定を保存しました");
+}
+
+function saveProfile() {
+  state.profile = {
+    gakuchika:  document.getElementById("s-gakuchika").value.trim(),
+    selfPr:     document.getElementById("s-selfpr").value.trim(),
+    motivation: document.getElementById("s-motivation").value.trim(),
+    skills:     document.getElementById("s-skills").value.trim()
+  };
+  persist();
+  toast("プロフィールを保存しました");
+}
+
+async function createNewSync() {
+  const btn = event.target;
+  btn.disabled = true; btn.textContent = "作成中…";
+  const id = await createBin(state);
+  if (id) {
+    syncId = id;
+    localStorage.setItem("jobs-sync-id", id);
+    syncState = "ok";
+    toast("同期を作成しました！同期IDをコピーして他のデバイスで使ってください");
+    render();
+  } else {
+    toast("作成に失敗しました。ネットワークを確認してください", 4000);
+    btn.disabled = false; btn.textContent = "新規作成";
+  }
+}
+
+async function connectSync() {
+  const id = document.getElementById("s-sync-id").value.trim();
+  if (!id) { toast("同期IDを入力してください"); return; }
+  syncId = id;
+  localStorage.setItem("jobs-sync-id", id);
+  await forceSyncPull();
+}
+
+async function forceSyncPull() {
+  toast("サーバーからデータを取得中…");
+  const remote = await syncPull();
+  if (!remote) { toast("取得失敗。同期IDを確認してください", 4000); return; }
+  if ((remote.updatedAt || 0) > (state.updatedAt || 0)) {
+    state = { ...state, ...remote };
+    saveLocal();
+    syncState = "ok";
+    render();
+    toast("最新データに更新しました");
+  } else {
+    syncState = "ok";
+    toast("既に最新です");
+  }
+}
+
+async function forceSyncPush() {
+  toast("サーバーに保存中…");
+  const ok = await syncPush(state);
+  syncState = ok ? "ok" : "error";
+  toast(ok ? "保存しました" : "保存に失敗しました", 3000);
+  updateSyncIndicator();
+}
+
+function disconnectSync() {
+  if (!confirm("同期を解除しますか？ローカルデータは残ります。")) return;
+  syncId = "";
+  localStorage.removeItem("jobs-sync-id");
+  syncState = "off";
+  render();
+  toast("同期を解除しました");
+}
+
+function exportJSON() {
+  const data = JSON.stringify({ companies: state.companies, schedules: state.schedules, profile: state.profile, exportedAt: Date.now() }, null, 2);
+  const blob = new Blob([data], { type: "application/json" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url; a.download = `jobs-backup-${today()}.json`; a.click();
+  URL.revokeObjectURL(url);
+  toast("エクスポートしました");
+}
+
+function importJSON(input) {
+  const file = input.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = e => {
+    try {
+      const d = JSON.parse(e.target.result);
+      if (!d.companies) { toast("無効なファイルです", 4000); return; }
+      if (!confirm(`${d.companies.length}社のデータをインポートしますか？（現在のデータと統合されます）`)) return;
+      const existingIds = new Set(state.companies.map(c => c.id));
+      d.companies.forEach(c => { if (!existingIds.has(c.id)) state.companies.push(c); });
+      if (d.schedules) {
+        const existingSchedIds = new Set(state.schedules.map(s => s.id));
+        d.schedules.forEach(s => { if (s.id && !existingSchedIds.has(s.id)) state.schedules.push(s); });
+      }
+      if (d.profile && Object.keys(d.profile).length > 0) state.profile = { ...state.profile, ...d.profile };
+      persist();
+      render();
+      toast(`インポート完了（${d.companies.length}社）`);
+    } catch(err) { toast("ファイルの読み込みに失敗しました", 4000); }
+  };
+  reader.readAsText(file);
+  input.value = "";
+}
+
+function confirmClearData() {
+  if (!confirm("全データを削除しますか？この操作は元に戻せません。")) return;
+  if (!confirm("本当に削除しますか？")) return;
+  state = { companies: [], schedules: [], profile: {}, updatedAt: Date.now() };
+  persist();
+  render();
+  toast("データを削除しました");
+}
+
+// ─── HELPERS ──────────────────────────────────────────────────────────────────
+function persist() {
+  state.updatedAt = Date.now();
+  saveLocal();
+  schedulePush();
+}
+
+function uid() {
+  return Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
+}
+
+function today() {
+  return new Date().toISOString().slice(0, 10);
+}
+
+function fmtDate(d) {
+  if (!d) return "";
+  const dt = new Date(d);
+  if (isNaN(dt)) return d;
+  return `${dt.getMonth()+1}/${dt.getDate()} (${['日','月','火','水','木','金','土'][dt.getDay()]})`;
+}
+
+function esc(s) {
+  if (s === null || s === undefined) return "";
+  return String(s)
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+
+function toast(msg, dur = 2500) {
+  const el = document.getElementById("toast");
+  el.textContent = msg;
+  el.classList.add("show");
+  clearTimeout(window._toastTimer);
+  window._toastTimer = setTimeout(() => el.classList.remove("show"), dur);
+}
+
+// ─── INIT ─────────────────────────────────────────────────────────────────────
+async function init() {
+  loadLocal();
+  parseHash();
+  render();
+  updateNav();
+
+  // Pull from sync on startup
+  if (syncId) {
+    const remote = await syncPull();
+    if (remote && (remote.updatedAt || 0) > (state.updatedAt || 0)) {
+      state = { ...state, ...remote };
+      saveLocal();
+      syncState = "ok";
+      render();
+      updateSyncIndicator();
+      toast("クラウドから最新データを読み込みました");
+    } else if (remote) {
+      syncState = "ok";
+      updateSyncIndicator();
+    } else {
+      syncState = "error";
+      updateSyncIndicator();
+    }
+  }
+
+  // Auto-push every 5 minutes if data exists
+  setInterval(() => {
+    if (syncId && state.companies.length > 0) {
+      syncPush(state).then(ok => { syncState = ok ? "ok" : "error"; updateSyncIndicator(); });
+    }
+  }, 5 * 60 * 1000);
+}
+
+window.addEventListener("hashchange", () => {
+  parseHash();
+  render();
+  updateNav();
+});
+
+window.addEventListener("popstate", () => {
+  parseHash();
+  render();
+  updateNav();
+});
+
+init();
+</script>
+</body>
+</html>
