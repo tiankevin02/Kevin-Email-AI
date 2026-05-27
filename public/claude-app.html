@@ -205,16 +205,11 @@ const BIN_BASE = "https://api.jsonbin.io/v3";
 async function syncPull() {
   if (!syncId) return false;
   try {
-    const r = await fetch(`${BIN_BASE}/b/${syncId}/latest`, {
-      headers: { "X-Master-Key": "$2a$10$placeholder" }
-    });
-    if (!r.ok) {
-      // Try without master key (public bin)
-      const r2 = await fetch(`${BIN_BASE}/b/${syncId}/latest`);
-      if (!r2.ok) return false;
-      const j = await r2.json();
-      return j.record || null;
-    }
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 8000);
+    const r = await fetch(`${BIN_BASE}/b/${syncId}/latest`, { signal: controller.signal });
+    clearTimeout(timer);
+    if (!r.ok) return false;
     const j = await r.json();
     return j.record || null;
   } catch(e) { return false; }
@@ -223,22 +218,30 @@ async function syncPull() {
 async function syncPush(data) {
   if (!syncId) return false;
   try {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 8000);
     const r = await fetch(`${BIN_BASE}/b/${syncId}`, {
       method: "PUT",
       headers: { "Content-Type": "application/json", "X-Bin-Versioning": "false" },
-      body: JSON.stringify(data)
+      body: JSON.stringify(data),
+      signal: controller.signal
     });
+    clearTimeout(timer);
     return r.ok;
   } catch(e) { return false; }
 }
 
 async function createBin(data) {
   try {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 8000);
     const r = await fetch(`${BIN_BASE}/b`, {
       method: "POST",
       headers: { "Content-Type": "application/json", "X-Bin-Name": "jobs-data", "X-Bin-Private": "false" },
-      body: JSON.stringify(data)
+      body: JSON.stringify(data),
+      signal: controller.signal
     });
+    clearTimeout(timer);
     if (!r.ok) return null;
     const j = await r.json();
     return j.metadata?.id || null;
@@ -1345,29 +1348,30 @@ function toast(msg, dur = 2500) {
 }
 
 // ─── INIT ─────────────────────────────────────────────────────────────────────
-async function init() {
+function init() {
   loadLocal();
   parseHash();
   render();
   updateNav();
 
-  // Pull from sync on startup
+  // Background sync: pull after 2s, non-blocking
   if (syncId) {
-    const remote = await syncPull();
-    if (remote && (remote.updatedAt || 0) > (state.updatedAt || 0)) {
-      state = { ...state, ...remote };
-      saveLocal();
-      syncState = "ok";
-      render();
-      updateSyncIndicator();
-      toast("クラウドから最新データを読み込みました");
-    } else if (remote) {
-      syncState = "ok";
-      updateSyncIndicator();
-    } else {
-      syncState = "error";
-      updateSyncIndicator();
-    }
+    setTimeout(() => {
+      syncPull().then(remote => {
+        if (!remote) { syncState = "error"; updateSyncIndicator(); return; }
+        if ((remote.updatedAt || 0) > (state.updatedAt || 0)) {
+          state = { ...state, ...remote };
+          saveLocal();
+          syncState = "ok";
+          render();
+          updateSyncIndicator();
+          toast("クラウドから最新データを読み込みました");
+        } else {
+          syncState = "ok";
+          updateSyncIndicator();
+        }
+      }).catch(() => { syncState = "error"; updateSyncIndicator(); });
+    }, 2000);
   }
 
   // Auto-push every 5 minutes if data exists
