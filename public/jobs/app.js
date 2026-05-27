@@ -168,10 +168,15 @@ function getProfilePayload() {
   return state.profile || {};
 }
 
+function getStoredAiKeys() {
+  try { return JSON.parse(localStorage.getItem("ai-keys") || "{}"); } catch { return {}; }
+}
+
 function aiPost(endpoint, params) {
+  const keys = getStoredAiKeys();
   return fetchJson(endpoint, {
     method: "POST",
-    body: JSON.stringify({ ...params, userProfile: getProfilePayload() }),
+    body: JSON.stringify({ ...params, userProfile: getProfilePayload(), _clientKeys: keys }),
   });
 }
 
@@ -3169,18 +3174,17 @@ async function loadAiStatus() {
   if (!el) return;
   try {
     const s = await fetchJson("/api/status");
-    const geminiConfigured = s.savedConfig?.geminiApiKey || s.configFromEnv?.gemini;
-    const effectiveModel   = s.configFromEnv?.geminiModelEffective || s.savedConfig?.geminiModel || "gemini-3.5-flash";
-    const fallbackModel    = s.configFromEnv?.geminiModelFallback  || "";
+    const local = getStoredAiKeys();
+    // Support both Render format (s.savedConfig / s.configFromEnv) and Vercel format (s.ai)
     const providers = [
-      { name: geminiConfigured ? `Gemini (${effectiveModel}${fallbackModel && fallbackModel !== effectiveModel ? ` → ${fallbackModel}` : ""})` : "Gemini", configured: geminiConfigured },
-      { name: "OpenAI", configured: s.savedConfig?.openAIKey || s.configFromEnv?.openAI },
-      { name: "Grok", configured: s.savedConfig?.grokApiKey || s.configFromEnv?.grok },
-      { name: "Anthropic", configured: s.savedConfig?.anthropicApiKey || s.configFromEnv?.anthropic },
+      { name: "Gemini",    configured: s.ai?.gemini    || s.savedConfig?.geminiApiKey    || s.configFromEnv?.gemini    || !!local.geminiApiKey },
+      { name: "OpenAI",    configured: s.ai?.openai    || s.savedConfig?.openAIKey       || s.configFromEnv?.openAI    || !!local.openAIKey },
+      { name: "Anthropic", configured: s.ai?.anthropic || s.savedConfig?.anthropicApiKey || s.configFromEnv?.anthropic || !!local.anthropicApiKey },
+      { name: "Grok",      configured: s.ai?.grok      || s.savedConfig?.grokApiKey      || s.configFromEnv?.grok      || !!local.grokApiKey },
     ].filter((p) => p.configured);
     el.innerHTML = providers.length
       ? `<div style="display:flex;gap:8px;flex-wrap:wrap">${providers.map((p) => `<span class="chip chip-offer">${p.name} ✓</span>`).join("")}</div>`
-      : `<span class="chip chip-reject">AIキー未設定 — 下のフォームにキーを入力してください</span>`;
+      : `<span class="chip chip-reject">AIキー未設定 — 下にキーを入力してください</span>`;
   } catch {
     el.innerHTML = `<span style="font-size:12.5px;color:var(--text-3)">状態取得に失敗しました</span>`;
   }
@@ -3194,20 +3198,28 @@ async function saveAiKeys() {
     toast("少なくとも1つのAPIキーを入力してください", 3000);
     return;
   }
+  // Save to localStorage first (works on all deployments)
+  const existing = getStoredAiKeys();
+  const keys = { ...existing };
+  if (geminiApiKey) keys.geminiApiKey = geminiApiKey;
+  if (anthropicApiKey) keys.anthropicApiKey = anthropicApiKey;
+  if (openAIKey) keys.openAIKey = openAIKey;
+  localStorage.setItem("ai-keys", JSON.stringify(keys));
+
+  // Also try to save to server (Render only — Vercel doesn't have /api/config)
   try {
     const body = {};
     if (geminiApiKey) body.geminiApiKey = geminiApiKey;
     if (anthropicApiKey) body.anthropicApiKey = anthropicApiKey;
     if (openAIKey) body.openAIKey = openAIKey;
     await fetchJson("/api/config", { method: "POST", body: JSON.stringify(body) });
-    toast("APIキーを保存しました");
-    document.getElementById("ai-gemini-key").value = "";
-    document.getElementById("ai-anthropic-key").value = "";
-    document.getElementById("ai-openai-key").value = "";
-    loadAiStatus();
-  } catch (e) {
-    toast(e.message || "保存に失敗しました", 5000);
-  }
+  } catch { /* Vercel: no /api/config, localStorage is enough */ }
+
+  toast("APIキーを保存しました");
+  document.getElementById("ai-gemini-key").value = "";
+  document.getElementById("ai-anthropic-key").value = "";
+  document.getElementById("ai-openai-key").value = "";
+  loadAiStatus();
 }
 
 function autoExport() {

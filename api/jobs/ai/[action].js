@@ -9,7 +9,16 @@ export default async function handler(req, res) {
 
   const action = req.query.action;
   const body = req.body;
-  const config = buildConfig();
+  // Merge client-provided keys (localStorage) with env vars; env vars take priority
+  const envConfig = buildConfig();
+  const clientKeys = body._clientKeys || {};
+  const config = {
+    ...envConfig,
+    geminiApiKey:    envConfig.geminiApiKey    || clientKeys.geminiApiKey    || "",
+    anthropicApiKey: envConfig.anthropicApiKey || clientKeys.anthropicApiKey || "",
+    openAiKey:       envConfig.openAiKey       || clientKeys.openAIKey       || "",
+    grokApiKey:      envConfig.grokApiKey      || clientKeys.grokApiKey      || "",
+  };
 
   try {
     switch (action) {
