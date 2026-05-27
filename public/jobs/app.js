@@ -248,17 +248,13 @@ async function loadData() {
     }
   } catch {}
 
-  // Weekly export reminder
+  // Daily auto-backup
   if (state.companies.length > 0) {
     const lastExport = parseInt(localStorage.getItem("lastExportDate") || "0", 10);
-    const daysSince = (Date.now() - lastExport) / (1000 * 60 * 60 * 24);
-    if (daysSince >= 7) {
-      setTimeout(() => {
-        const msg = lastExport === 0
-          ? "データのバックアップをまだ取っていません。設定からエクスポートをお勧めします。"
-          : `前回のエクスポートから${Math.floor(daysSince)}日経過しています。定期バックアップをお勧めします。`;
-        toast(msg, 7000);
-      }, 3000);
+    const lastExportDay = lastExport ? new Date(lastExport).toDateString() : "";
+    const todayStr = new Date().toDateString();
+    if (lastExportDay !== todayStr && !sessionStorage.getItem("autoExportedThisSession")) {
+      setTimeout(() => autoExport(), 3000);
     }
   }
 }
@@ -3212,6 +3208,26 @@ async function saveAiKeys() {
   } catch (e) {
     toast(e.message || "保存に失敗しました", 5000);
   }
+}
+
+function autoExport() {
+  const data = JSON.stringify({
+    companies: state.companies,
+    schedules: state.schedules,
+    profile: state.profile,
+    exportedAt: Date.now()
+  }, null, 2);
+  const blob = new Blob([data], { type: "application/json" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = `shukatsu-ai-backup-${today()}.json`;
+  a.click();
+  URL.revokeObjectURL(url);
+  localStorage.setItem("lastExportDate", String(Date.now()));
+  sessionStorage.setItem("autoExportedThisSession", "1");
+  toast("自動バックアップ完了 📥", 4000);
+  checkDataStatus();
 }
 
 function exportData() {
