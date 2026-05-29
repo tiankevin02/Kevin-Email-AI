@@ -8,8 +8,10 @@
     .box { background: #1e293b; border-radius: 16px; padding: 40px; max-width: 480px; width: 90%; text-align: center; }
     h1 { font-size: 20px; margin-bottom: 8px; }
     p { color: #94a3b8; font-size: 14px; margin-bottom: 24px; }
-    button { background: #4f46e5; color: white; border: none; border-radius: 8px; padding: 14px 32px; font-size: 16px; cursor: pointer; width: 100%; }
+    button { background: #4f46e5; color: white; border: none; border-radius: 8px; padding: 14px 32px; font-size: 16px; cursor: pointer; width: 100%; margin-bottom: 10px; }
     button:disabled { background: #334155; cursor: not-allowed; }
+    .btn-secondary { background: #334155; }
+    hr { border: none; border-top: 1px solid #334155; margin: 20px 0; }
     .status { margin-top: 20px; font-size: 14px; min-height: 24px; }
     .ok { color: #34d399; }
     .err { color: #f87171; }
@@ -18,10 +20,17 @@
 <body>
 <div class="box">
   <h1>就活AIデータ復元</h1>
-  <p>アプリのURLを入力してボタンを押してください</p>
-  <input id="appurl" type="url" placeholder="https://kevin-email-ai.vercel.app" style="width:100%;box-sizing:border-box;padding:10px 14px;border-radius:8px;border:1px solid #334155;background:#0f172a;color:#e2e8f0;font-size:14px;margin-bottom:12px" />
-  <button id="btn" onclick="restore()">復元する</button>
+
+  <p style="text-align:left;font-size:13px;color:#94a3b8;margin-bottom:6px">方法①：サーバーに直接送信（推奨）</p>
+  <input id="appurl" type="url" placeholder="https://kevin-email-ai.vercel.app" style="width:100%;box-sizing:border-box;padding:10px 14px;border-radius:8px;border:1px solid #334155;background:#0f172a;color:#e2e8f0;font-size:14px;margin-bottom:10px" />
+  <button id="btn" onclick="restore()">サーバーに復元する</button>
   <div class="status" id="status"></div>
+
+  <hr>
+
+  <p style="text-align:left;font-size:13px;color:#94a3b8;margin-bottom:6px">方法②：JSONファイルをダウンロードしてアプリからインポート</p>
+  <button class="btn-secondary" onclick="downloadJson()">JSONをダウンロード</button>
+  <p style="font-size:12px;color:#64748b;margin-top:6px">ダウンロード後 → アプリ → 設定 → データをインポート</p>
 </div>
 <script>
 const DATA = {
@@ -51,6 +60,14 @@ const DATA = {
   profile: {gakuchika:"",selfPr:"",motivation:"",skills:"",other:""},
   updatedAt: Date.now()
 };
+
+function downloadJson() {
+  const blob = new Blob([JSON.stringify({...DATA, exportedAt: Date.now()}, null, 2)], {type: "application/json"});
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = "shukatsu-backup.json";
+  a.click();
+}
 
 async function restore() {
   const btn = document.getElementById("btn");
