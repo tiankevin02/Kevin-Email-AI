@@ -4,10 +4,16 @@ const KEY = "jobs-data";
 
 const DEFAULT_DATA = { companies: [], schedules: [], profile: {}, updatedAt: 0 };
 
+function fetchWithTimeout(url, opts, ms = 8000) {
+  const controller = new AbortController();
+  const id = setTimeout(() => controller.abort(), ms);
+  return fetch(url, { ...opts, signal: controller.signal }).finally(() => clearTimeout(id));
+}
+
 export async function getJobsData() {
   if (!REDIS_URL || !REDIS_TOKEN) return { ...DEFAULT_DATA };
   try {
-    const res = await fetch(`${REDIS_URL}/get/${KEY}`, {
+    const res = await fetchWithTimeout(`${REDIS_URL}/get/${KEY}`, {
       headers: { Authorization: `Bearer ${REDIS_TOKEN}` },
     });
     const json = await res.json();
@@ -21,7 +27,7 @@ export async function getJobsData() {
 export async function setJobsData(data) {
   if (!REDIS_URL || !REDIS_TOKEN) return;
   try {
-    await fetch(`${REDIS_URL}/set/${KEY}`, {
+    await fetchWithTimeout(`${REDIS_URL}/set/${KEY}`, {
       method: "POST",
       headers: {
         Authorization: `Bearer ${REDIS_TOKEN}`,
@@ -30,6 +36,6 @@ export async function setJobsData(data) {
       body: JSON.stringify([JSON.stringify(data)]),
     });
   } catch {
-    // silently fail
+    // silently fail (timeout or network error)
   }
 }
