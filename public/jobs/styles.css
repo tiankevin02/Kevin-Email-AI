@@ -1343,3 +1343,17 @@ img { max-width: 100%; }
 .collapse-trigger:hover .collapse-chevron { opacity: 1; }
 .settings-section-header { cursor: pointer; user-select: none; }
 .settings-section-header:hover { opacity: 0.82; }
+
+/* PWA standalone mode: tighter bottom spacing */
+@media all and (display-mode: standalone) {
+  .mobile-nav {
+    padding: 6px 4px 0;
+    padding-bottom: env(safe-area-inset-bottom);
+  }
+  .view {
+    padding-bottom: calc(52px + env(safe-area-inset-bottom));
+  }
+  #view-settings {
+    padding-bottom: calc(40px + env(safe-area-inset-bottom));
+  }
+}
