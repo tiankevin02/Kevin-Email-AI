@@ -233,7 +233,7 @@ async function loadData() {
 
   // ③ サーバーと同期（サーバーがリセットされていても上書きしない）
   try {
-    const data = await fetchJson("/api/jobs");
+    const data = await fetchJson("/api/jobs-data");
     const serverTs  = data.updatedAt || 0;
     const localTs   = _readStorage(STORAGE_KEY).updatedAt || 0;
     const serverHas = (data.companies || []).length > 0;
@@ -275,7 +275,7 @@ function scheduleSave() {
 
 async function _pushToServer() {
   const updatedAt = Date.now();
-  await fetchJson("/api/jobs", {
+  await fetchJson("/api/jobs-data", {
     method: "POST",
     body: JSON.stringify({ companies: state.companies, schedules: state.schedules, profile: state.profile, updatedAt }),
   });
@@ -3166,7 +3166,7 @@ async function forcePushToServer() {
     } catch (e) {
       alert("データ変換エラー:\n" + e.message); return;
     }
-    const res = await fetch("/api/jobs", {
+    const res = await fetch("/api/jobs-data", {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: payload,
@@ -3185,7 +3185,7 @@ async function forcePushToServer() {
 
 async function forcePullFromServer() {
   try {
-    const data = await fetchJson("/api/jobs");
+    const data = await fetchJson("/api/jobs-data");
     if (!(data.companies || []).length) { toast("サーバーにデータがありません"); return; }
     const esCount = data.companies.reduce((n, c) => n + (c.es || []).length, 0);
     const ivCount  = data.companies.reduce((n, c) => n + (c.interviews || []).length, 0);
@@ -3334,7 +3334,7 @@ async function resetData() {
   // saveDataのガードをバイパスして直接書き込む
   try {
     const updatedAt = Date.now();
-    await fetchJson("/api/jobs", { method: "POST", body: JSON.stringify({ companies: [], schedules: [], updatedAt }) });
+    await fetchJson("/api/jobs-data", { method: "POST", body: JSON.stringify({ companies: [], schedules: [], updatedAt }) });
     localStorage.setItem(STORAGE_KEY, JSON.stringify({ companies: [], schedules: [], updatedAt }));
   } catch {
     localStorage.setItem(STORAGE_KEY, JSON.stringify({ companies: [], schedules: [], updatedAt: Date.now() }));
