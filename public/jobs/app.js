@@ -3044,7 +3044,7 @@ function renderSettings() {
               <button class="btn btn-secondary btn-sm" onclick="checkDataStatus()">状況を再確認</button>
               <button class="btn btn-primary btn-sm" onclick="forceBackup()">今すぐバックアップ</button>
               <button class="btn btn-secondary btn-sm" onclick="restoreFromBackup()">バックアップから復元</button>
-              <button class="btn btn-secondary btn-sm" onclick="forcePushToServer()">PCデータをサーバーへ送る</button>
+              <button class="btn btn-secondary btn-sm" onclick="forcePushToServer()">このデバイスのデータをサーバーへ同期</button>
               <button class="btn btn-primary btn-sm" onclick="forcePullFromServer()" style="background:var(--green)">サーバーから最新データを取得</button>
             </div>
           </div>
@@ -3155,13 +3155,14 @@ function restoreFromBackup() {
 }
 
 async function forcePushToServer() {
-  if (!state.companies.length) { toast("現在表示されているデータがありません"); return; }
+  const count = state.companies.length;
+  if (!count) { toast("送るデータがありません（企業0社）"); return; }
   try {
     await _pushToServer();
-    toast(`${state.companies.length}社のデータをサーバーに送りました`);
+    toast(`✅ ${count}社のデータをサーバーに同期しました`, 5000);
     checkDataStatus();
   } catch (e) {
-    toast("サーバー同期に失敗しました: " + e.message, 5000);
+    toast("❌ サーバー同期に失敗: " + e.message, 7000);
   }
 }
 
