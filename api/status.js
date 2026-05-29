@@ -1,6 +1,6 @@
-import { buildConfig } from "./_lib/ai.js";
+const { buildConfig } = require("./_lib/ai.js");
 
-export default function handler(req, res) {
+module.exports = function handler(req, res) {
   const cfg = buildConfig();
   res.status(200).json({
     ok: true,
@@ -12,4 +12,4 @@ export default function handler(req, res) {
     },
     storage: !!process.env.UPSTASH_REDIS_REST_URL,
   });
-}
+};

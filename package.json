@@ -2,7 +2,6 @@
   "name": "email-ai-gmail",
   "version": "0.1.0",
   "private": true,
-  "type": "module",
   "scripts": {
     "start": "node scripts/prefer-gemini-flash.mjs && node scripts/keep-gmail-session.mjs && node server.mjs"
   }

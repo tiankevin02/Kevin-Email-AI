@@ -1,6 +1,6 @@
-import { buildProfileContext, jobsAiChat, buildConfig } from "../../_lib/ai.js";
+const { buildProfileContext, jobsAiChat, buildConfig } = require("../../_lib/ai.js");
 
-export default async function handler(req, res) {
+module.exports = async function handler(req, res) {
   res.setHeader("Access-Control-Allow-Origin", "*");
   if (req.method !== "POST") {
     res.status(405).json({ error: "Method not allowed" });
@@ -624,4 +624,4 @@ JSONのみを返してください。`;
   }
 }
 
-export const config = { api: { bodyParser: { sizeLimit: "5mb" } } };
+// body parser config handled by vercel defaults
