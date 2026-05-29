@@ -3064,12 +3064,18 @@ function renderSettings() {
           <div class="form-group" style="background:var(--surface-2);border-radius:10px;padding:14px 16px;border:1px solid var(--border)">
             <div style="font-size:13px;font-weight:700;margin-bottom:8px">💾 現在のデータ状況</div>
             <div id="data-status-info" style="font-size:13px;color:var(--text-2);line-height:1.8">確認中...</div>
-            <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px">
-              <button class="btn btn-secondary btn-sm" onclick="checkDataStatus(true)">状況を再確認</button>
-              <button class="btn btn-primary btn-sm" onclick="forceBackup()">今すぐバックアップ</button>
-              <button class="btn btn-secondary btn-sm" onclick="restoreFromBackup()">バックアップから復元</button>
-              <button class="btn btn-secondary btn-sm" onclick="forcePushToServer()">このデバイスのデータをサーバーへ同期</button>
-              <button class="btn btn-primary btn-sm" onclick="forcePullFromServer()" style="background:var(--green)">サーバーから最新データを取得</button>
+            <div style="margin-top:12px">
+              <div style="font-size:11px;font-weight:700;color:var(--text-3);text-transform:uppercase;letter-spacing:.5px;margin-bottom:6px">☁️ クラウド同期（Upstash）</div>
+              <div style="display:flex;gap:8px;flex-wrap:wrap">
+                <button class="btn btn-primary btn-sm" onclick="forcePushToServer()" style="background:var(--indigo,#4f46e5)">↑ このデバイスをクラウドへ送る</button>
+                <button class="btn btn-primary btn-sm" onclick="forcePullFromServer()" style="background:var(--green)">↓ クラウドから最新データを取得</button>
+              </div>
+              <div style="font-size:11px;font-weight:700;color:var(--text-3);text-transform:uppercase;letter-spacing:.5px;margin:10px 0 6px">📱 端末内バックアップ</div>
+              <div style="display:flex;gap:8px;flex-wrap:wrap">
+                <button class="btn btn-secondary btn-sm" onclick="checkDataStatus(true)">状況を再確認</button>
+                <button class="btn btn-secondary btn-sm" onclick="forceBackup()">端末内に保存</button>
+                <button class="btn btn-secondary btn-sm" onclick="restoreFromBackup()">端末内から復元</button>
+              </div>
             </div>
           </div>
 
