@@ -3160,11 +3160,26 @@ async function forcePushToServer() {
   if (!count) { toast("送るデータがありません（企業0社）"); return; }
   toast("サーバーに送信中...", 3000);
   try {
-    await _pushToServer();
+    let payload;
+    try {
+      payload = JSON.stringify({ companies: state.companies, schedules: state.schedules, profile: state.profile, updatedAt: Date.now() });
+    } catch (e) {
+      alert("データ変換エラー:\n" + e.message); return;
+    }
+    const res = await fetch("/api/jobs", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: payload,
+    });
+    const text = await res.text();
+    if (!res.ok) {
+      alert("サーバーエラー HTTP " + res.status + ":\n" + text.slice(0, 400));
+      return;
+    }
     toast(`✅ ${count}社をサーバーに同期しました`, 5000);
     checkDataStatus();
   } catch (e) {
-    alert("サーバー同期エラー:\n" + e.message + "\n\nUpstashの環境変数がVercelに設定されているか確認してください。");
+    alert("ネットワークエラー:\n" + e.message);
   }
 }
 
