@@ -1,4 +1,4 @@
-export function buildConfig() {
+function buildConfig() {
   return {
     geminiApiKey: process.env.GEMINI_API_KEY,
     geminiModel: process.env.GEMINI_MODEL || "gemini-3.5-flash",
@@ -12,7 +12,7 @@ export function buildConfig() {
   };
 }
 
-export function buildProfileContext(userProfile) {
+function buildProfileContext(userProfile) {
   if (!userProfile) return "";
   const parts = [];
   if (userProfile.gakuchika)  parts.push(`【ガクチカ】\n${userProfile.gakuchika}`);
@@ -24,7 +24,7 @@ export function buildProfileContext(userProfile) {
   return "\n\n---\n【応募者のプロフィール情報】\n" + parts.join("\n\n");
 }
 
-export async function callGeminiApi(key, model, reqBody) {
+async function callGeminiApi(key, model, reqBody) {
   const response = await fetch(
     `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${key}`,
     { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(reqBody) }
@@ -33,7 +33,7 @@ export async function callGeminiApi(key, model, reqBody) {
   return { ok: response.ok, status: response.status, body };
 }
 
-export async function tryProviderChat(provider, config, messages, temperature) {
+async function tryProviderChat(provider, config, messages, temperature) {
   switch (provider) {
     case "gemini": {
       if (!config.geminiApiKey) return null;
@@ -99,7 +99,7 @@ export async function tryProviderChat(provider, config, messages, temperature) {
   }
 }
 
-export async function jobsAiChat(config, systemPrompt, userContent) {
+async function jobsAiChat(config, systemPrompt, userContent) {
   const messages = [
     { role: "system", content: systemPrompt },
     { role: "user", content: userContent },
@@ -115,3 +115,5 @@ export async function jobsAiChat(config, systemPrompt, userContent) {
   err.status = 400;
   throw err;
 }
+
+module.exports = { buildConfig, buildProfileContext, callGeminiApi, tryProviderChat, jobsAiChat };
