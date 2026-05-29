@@ -181,8 +181,9 @@ async function upstashGet() {
   if (!cfg?.url || !cfg?.token) return null;
   try {
     const res = await fetch(`${cfg.url}/get/jobs-data`, { headers: { Authorization: `Bearer ${cfg.token}` } });
+    if (!res.ok) return null; // 認証失敗など
     const json = await res.json();
-    if (!json.result) return null;
+    if (!json.result) return {}; // 接続成功だがデータなし
     return JSON.parse(json.result);
   } catch { return null; }
 }
