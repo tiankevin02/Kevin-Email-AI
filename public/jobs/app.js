@@ -172,6 +172,34 @@ function getStoredAiKeys() {
   try { return JSON.parse(localStorage.getItem("ai-keys") || "{}"); } catch { return {}; }
 }
 
+function getUpstashConfig() {
+  try { return JSON.parse(localStorage.getItem("upstash-config") || "null"); } catch { return null; }
+}
+
+async function upstashGet() {
+  const cfg = getUpstashConfig();
+  if (!cfg?.url || !cfg?.token) return null;
+  try {
+    const res = await fetch(`${cfg.url}/get/jobs-data`, { headers: { Authorization: `Bearer ${cfg.token}` } });
+    const json = await res.json();
+    if (!json.result) return null;
+    return JSON.parse(json.result);
+  } catch { return null; }
+}
+
+async function upstashSet(data) {
+  const cfg = getUpstashConfig();
+  if (!cfg?.url || !cfg?.token) return false;
+  try {
+    const res = await fetch(`${cfg.url}/set/jobs-data`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${cfg.token}`, "Content-Type": "application/json" },
+      body: JSON.stringify([JSON.stringify(data)]),
+    });
+    return res.ok;
+  } catch { return false; }
+}
+
 function aiPost(endpoint, params) {
   const keys = getStoredAiKeys();
   return fetchJson(endpoint, {
@@ -231,24 +259,21 @@ async function loadData() {
     }
   }
 
-  // ③ サーバーと同期（サーバーがリセットされていても上書きしない）
+  // ③ Upstashと直接同期
   try {
-    const data = await fetchJson("/api/jobs/ai/sync");
-    const serverTs  = data.updatedAt || 0;
-    const localTs   = _readStorage(STORAGE_KEY).updatedAt || 0;
-    const serverHas = (data.companies || []).length > 0;
-    const localHas  = state.companies.length > 0;
-
-    if (serverHas && serverTs >= localTs) {
-      state.companies = data.companies;
-      state.schedules = data.schedules || [];
-      if (data.profile) state.profile = { ...state.profile, ...data.profile };
-      _writeStorage({ companies: state.companies, schedules: state.schedules, profile: state.profile, updatedAt: serverTs });
-    } else if (localHas) {
-      await _pushToServer();
-      if (!serverHas) {
-        // Server was empty (redeploy/restart) — data survived in localStorage
-        toast("サーバーが再起動されました。ローカルデータを自動復元しました ✓", 5000);
+    const data = await upstashGet();
+    if (data) {
+      const serverTs = data.updatedAt || 0;
+      const localTs  = _readStorage(STORAGE_KEY).updatedAt || 0;
+      const serverHas = (data.companies || []).length > 0;
+      const localHas  = state.companies.length > 0;
+      if (serverHas && serverTs >= localTs) {
+        state.companies = data.companies;
+        state.schedules = data.schedules || [];
+        if (data.profile) state.profile = { ...state.profile, ...data.profile };
+        _writeStorage({ companies: state.companies, schedules: state.schedules, profile: state.profile, updatedAt: serverTs });
+      } else if (localHas && !serverHas) {
+        upstashSet({ companies: state.companies, schedules: state.schedules, profile: state.profile, updatedAt: Date.now() });
       }
     }
   } catch {}
@@ -275,10 +300,8 @@ function scheduleSave() {
 
 async function _pushToServer() {
   const updatedAt = Date.now();
-  await fetchJson("/api/jobs/ai/sync", {
-    method: "POST",
-    body: JSON.stringify({ companies: state.companies, schedules: state.schedules, profile: state.profile, updatedAt }),
-  });
+  const data = { companies: state.companies, schedules: state.schedules, profile: state.profile, updatedAt };
+  await upstashSet(data);
   return updatedAt;
 }
 
@@ -3049,6 +3072,15 @@ function renderSettings() {
             </div>
           </div>
 
+          <div class="form-group mt-3" style="background:var(--surface-2);border-radius:10px;padding:14px 16px;border:1px solid var(--border)">
+            <div style="font-size:13px;font-weight:700;margin-bottom:4px">☁️ クラウド同期（Upstash直接接続）</div>
+            <div style="font-size:12px;color:var(--text-3);margin-bottom:10px">UpstashのREST URLとTokenを入力すると、複数デバイスで自動同期されます。</div>
+            <input id="upstash-url-input" class="form-input" placeholder="https://xxx-xxx.upstash.io" style="margin-bottom:6px" />
+            <input id="upstash-token-input" class="form-input" placeholder="Upstash REST Token（AQxxxx...）" type="password" style="margin-bottom:8px" />
+            <button class="btn btn-primary btn-sm" onclick="saveUpstashConfig()">保存して接続テスト</button>
+            <span id="upstash-status" style="font-size:12px;margin-left:8px;color:var(--text-3)"></span>
+          </div>
+
           <div class="form-group mt-3">
             <label class="form-label">自動バックアップ</label>
             <div class="form-hint" style="margin-bottom:8px">アプリを開いたとき、前回から24時間以上経っていると自動でJSONファイルをダウンロードします。ファイルはダウンロードフォルダに溜まるので大切にとっておいてください。</div>
@@ -3099,6 +3131,31 @@ function renderSettings() {
     }
   }
   checkDataStatus();
+  // Populate Upstash settings if saved
+  const cfg = getUpstashConfig();
+  if (cfg?.url) {
+    const urlEl = document.getElementById("upstash-url-input");
+    const statusEl = document.getElementById("upstash-status");
+    if (urlEl) urlEl.value = cfg.url;
+    if (statusEl) statusEl.textContent = "✅ 設定済み";
+  }
+}
+
+async function saveUpstashConfig() {
+  const url   = (document.getElementById("upstash-url-input")?.value || "").trim();
+  const token = (document.getElementById("upstash-token-input")?.value || "").trim();
+  const statusEl = document.getElementById("upstash-status");
+  if (!url || !token) { toast("URLとTokenを両方入力してください"); return; }
+  localStorage.setItem("upstash-config", JSON.stringify({ url, token }));
+  if (statusEl) statusEl.textContent = "接続テスト中...";
+  const data = await upstashGet();
+  if (data !== null) {
+    if (statusEl) statusEl.textContent = "✅ 接続成功！";
+    toast(`✅ Upstash接続成功！クラウドに${(data.companies||[]).length}社のデータがあります`, 5000);
+  } else {
+    if (statusEl) statusEl.textContent = "❌ 接続失敗";
+    toast("❌ 接続失敗。URLとTokenを確認してください", 6000);
+  }
 }
 
 function saveProfile() {
@@ -3158,38 +3215,21 @@ function restoreFromBackup() {
 async function forcePushToServer() {
   const count = state.companies.length;
   if (!count) { toast("送るデータがありません（企業0社）"); return; }
-  toast("サーバーに送信中...", 3000);
-  try {
-    let payload;
-    try {
-      payload = JSON.stringify({ companies: state.companies, schedules: state.schedules, profile: state.profile, updatedAt: Date.now() });
-    } catch (e) {
-      alert("データ変換エラー:\n" + e.message); return;
-    }
-    const res = await fetch("/api/jobs/ai/sync", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: payload,
-    });
-    const text = await res.text();
-    if (!res.ok) {
-      alert("サーバーエラー HTTP " + res.status + ":\n" + text.slice(0, 400));
-      return;
-    }
-    toast(`✅ ${count}社をサーバーに同期しました`, 5000);
-    checkDataStatus();
-  } catch (e) {
-    alert("ネットワークエラー:\n" + e.message);
-  }
+  if (!getUpstashConfig()) { toast("設定→クラウド同期でUpstash URLとTokenを入力してください", 5000); return; }
+  toast("Upstashに送信中...", 3000);
+  const ok = await upstashSet({ companies: state.companies, schedules: state.schedules, profile: state.profile, updatedAt: Date.now() });
+  if (ok) { toast(`✅ ${count}社をクラウドに同期しました`, 5000); checkDataStatus(); }
+  else { toast("❌ 同期失敗。URLとTokenを確認してください", 5000); }
 }
 
 async function forcePullFromServer() {
+  if (!getUpstashConfig()) { toast("設定→クラウド同期でUpstash URLとTokenを入力してください", 5000); return; }
   try {
-    const data = await fetchJson("/api/jobs/ai/sync");
-    if (!(data.companies || []).length) { toast("サーバーにデータがありません"); return; }
+    const data = await upstashGet();
+    if (!data || !(data.companies || []).length) { toast("クラウドにデータがありません"); return; }
     const esCount = data.companies.reduce((n, c) => n + (c.es || []).length, 0);
     const ivCount  = data.companies.reduce((n, c) => n + (c.interviews || []).length, 0);
-    if (!confirm(`サーバーのデータで上書きします。\n\n企業: ${data.companies.length}社・ES: ${esCount}件・面接: ${ivCount}件\n\nよろしいですか？`)) return;
+    if (!confirm(`クラウドのデータで上書きします。\n\n企業: ${data.companies.length}社・ES: ${esCount}件・面接: ${ivCount}件\n\nよろしいですか？`)) return;
     state.companies = data.companies;
     state.schedules = data.schedules || [];
     if (data.profile) state.profile = { ...state.profile, ...data.profile };
@@ -3198,7 +3238,7 @@ async function forcePullFromServer() {
     checkDataStatus();
     handleRoute();
   } catch (e) {
-    toast("サーバーからの取得に失敗しました: " + e.message, 5000);
+    toast("クラウドからの取得に失敗しました: " + e.message, 5000);
   }
 }
 
