@@ -3158,12 +3158,13 @@ function restoreFromBackup() {
 async function forcePushToServer() {
   const count = state.companies.length;
   if (!count) { toast("送るデータがありません（企業0社）"); return; }
+  toast("サーバーに送信中...", 3000);
   try {
     await _pushToServer();
-    toast(`✅ ${count}社のデータをサーバーに同期しました`, 5000);
+    toast(`✅ ${count}社をサーバーに同期しました`, 5000);
     checkDataStatus();
   } catch (e) {
-    toast("❌ サーバー同期に失敗: " + e.message, 7000);
+    alert("サーバー同期エラー:\n" + e.message + "\n\nUpstashの環境変数がVercelに設定されているか確認してください。");
   }
 }
 
