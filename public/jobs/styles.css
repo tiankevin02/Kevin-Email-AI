@@ -1084,6 +1084,11 @@ img { max-width: 100%; }
   .mobile-nav { display: grid; }
   .mobile-settings-btn { display: flex; }
 
+  /* Top safe area for notch / Dynamic Island */
+  .content-wrapper {
+    padding-top: env(safe-area-inset-top);
+  }
+
   /* Settings overlay: always rendered, CSS transition from opacity:0 base state.
      Transition avoids the animation fill-mode timing race that causes flash. */
   #view-settings {
@@ -1093,7 +1098,7 @@ img { max-width: 100%; }
     z-index: 55;
     background: var(--bg);
     overflow-y: auto;
-    padding: 24px 18px 48px;
+    padding: calc(24px + env(safe-area-inset-top)) 18px calc(48px + env(safe-area-inset-bottom));
     opacity: 0;
     filter: blur(10px);
     transform: scale(0.97);
@@ -1108,7 +1113,11 @@ img { max-width: 100%; }
     pointer-events: auto;
   }
 
-  .view { padding: 16px 14px calc(80px + env(safe-area-inset-bottom)); }
+  .mobile-settings-btn {
+    top: calc(14px + env(safe-area-inset-top));
+  }
+
+  .view { padding: 16px 14px calc(76px + env(safe-area-inset-bottom)); }
   .view-header { flex-direction: column; gap: 10px; }
   .view-header .btn { width: 100%; justify-content: center; }
 
