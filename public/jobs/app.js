@@ -3041,7 +3041,7 @@ function renderSettings() {
             <div style="font-size:13px;font-weight:700;margin-bottom:8px">💾 現在のデータ状況</div>
             <div id="data-status-info" style="font-size:13px;color:var(--text-2);line-height:1.8">確認中...</div>
             <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px">
-              <button class="btn btn-secondary btn-sm" onclick="checkDataStatus()">状況を再確認</button>
+              <button class="btn btn-secondary btn-sm" onclick="checkDataStatus(true)">状況を再確認</button>
               <button class="btn btn-primary btn-sm" onclick="forceBackup()">今すぐバックアップ</button>
               <button class="btn btn-secondary btn-sm" onclick="restoreFromBackup()">バックアップから復元</button>
               <button class="btn btn-secondary btn-sm" onclick="forcePushToServer()">このデバイスのデータをサーバーへ同期</button>
@@ -3113,7 +3113,7 @@ function saveProfile() {
   toast("プロフィールを保存しました");
 }
 
-function checkDataStatus() {
+function checkDataStatus(showToast = false) {
   const el = document.getElementById("data-status-info");
   if (!el) return;
   const main   = _readStorage(STORAGE_KEY);
@@ -3135,6 +3135,7 @@ function checkDataStatus() {
     <div>📁 最終ファイル保存: <strong>${exportDate}</strong>${exportWarning}</div>
     <div style="margin-top:6px;font-size:12px;color:var(--text-3,#9ca3af)">毎日自動でファイルにバックアップされます。ダウンロードフォルダを確認してください。</div>
   `;
+  if (showToast) toast(`確認完了：メモリ ${serverCount}社・ストレージ ${mainCount}社`);
 }
 
 function restoreFromBackup() {
