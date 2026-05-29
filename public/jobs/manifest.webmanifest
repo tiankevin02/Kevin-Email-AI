@@ -1,0 +1,19 @@
+{
+  "name": "就活AI",
+  "short_name": "就活AI",
+  "description": "企業管理・ES添削・面接対策・スケジュール管理を1つにまとめた就活管理アプリ。",
+  "start_url": "/jobs/",
+  "scope": "/jobs/",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#0f172a",
+  "theme_color": "#0f172a",
+  "icons": [
+    {
+      "src": "/icons/icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}
