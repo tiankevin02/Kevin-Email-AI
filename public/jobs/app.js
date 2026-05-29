@@ -253,13 +253,14 @@ async function loadData() {
     }
   } catch {}
 
-  // Daily auto-backup
+  // Daily auto-export: automatically download backup file once per day
   if (state.companies.length > 0) {
     const lastExport = parseInt(localStorage.getItem("lastExportDate") || "0", 10);
     const lastExportDay = lastExport ? new Date(lastExport).toDateString() : "";
     const todayStr = new Date().toDateString();
-    if (lastExportDay !== todayStr && !sessionStorage.getItem("autoExportedThisSession")) {
-      setTimeout(() => autoExport(), 3000);
+    const alreadyExportedToday = sessionStorage.getItem("autoExportedThisSession") === "1";
+    if (lastExportDay !== todayStr && !alreadyExportedToday) {
+      setTimeout(() => autoExport(true), 3000);
     }
   }
 }
@@ -1178,7 +1179,7 @@ async function runEsReview(companyId, esId) {
   if (reviewEl) reviewEl.innerHTML = `<div class="ai-loading"><div class="spinner"></div>AIが添削中...</div>`;
 
   try {
-    const res = await aiPost("/api/jobs/ai/es-review", { companyName: c.name, question: entry.question, answer: entry.answer });
+    const res = await aiPost("/api/jobs/ai/es-review", { companyName: c.name, question: entry.question, answer: entry.answer, maxChars: entry.maxChars || null });
     entry.aiReview = res.review;
     entry.updatedAt = now();
     c.updatedAt = now();
@@ -1230,7 +1231,7 @@ async function runEsAdvice(companyId, esId) {
   const reviewEl = document.getElementById(`es-review-${esId}`);
   if (reviewEl) reviewEl.innerHTML = `<div class="ai-loading"><div class="spinner"></div>AIがアドバイス作成中...</div>`;
   try {
-    const res = await aiPost("/api/jobs/ai/es-advice", { companyName: c.name, question: entry.question });
+    const res = await aiPost("/api/jobs/ai/es-advice", { companyName: c.name, question: entry.question, maxChars: entry.maxChars || null });
     entry.aiAdvice = res.advice;
     entry.updatedAt = now();
     c.updatedAt = now();
@@ -3043,14 +3044,18 @@ function renderSettings() {
               <button class="btn btn-secondary btn-sm" onclick="checkDataStatus()">状況を再確認</button>
               <button class="btn btn-primary btn-sm" onclick="forceBackup()">今すぐバックアップ</button>
               <button class="btn btn-secondary btn-sm" onclick="restoreFromBackup()">バックアップから復元</button>
-              <button class="btn btn-secondary btn-sm" onclick="forcePushToServer()">サーバーに強制同期</button>
+              <button class="btn btn-secondary btn-sm" onclick="forcePushToServer()">PCデータをサーバーへ送る</button>
+              <button class="btn btn-primary btn-sm" onclick="forcePullFromServer()" style="background:var(--green)">サーバーから最新データを取得</button>
             </div>
           </div>
 
           <div class="form-group mt-3">
-            <label class="form-label">データをエクスポート</label>
-            <div class="form-hint">JSONファイルとしてダウンロード（定期的に保存推奨）</div>
-            <button class="btn btn-secondary mt-2" onclick="exportData()">データをエクスポート</button>
+            <label class="form-label">自動バックアップ</label>
+            <div class="form-hint" style="margin-bottom:8px">アプリを開いたとき、前回から24時間以上経っていると自動でJSONファイルをダウンロードします。ファイルはダウンロードフォルダに溜まるので大切にとっておいてください。</div>
+            <div style="display:flex;gap:8px;flex-wrap:wrap">
+              <button class="btn btn-primary btn-sm" onclick="autoExport()" style="background:var(--green)">今すぐバックアップ保存</button>
+              <button class="btn btn-secondary btn-sm" onclick="exportData()">手動エクスポート</button>
+            </div>
           </div>
           <div class="form-group">
             <label class="form-label">データをインポート</label>
@@ -3121,14 +3126,14 @@ function checkDataStatus() {
   const lastExport = parseInt(localStorage.getItem("lastExportDate") || "0", 10);
   const exportDate = lastExport ? new Date(lastExport).toLocaleString("ja-JP") : "なし";
   const daysSinceExport = lastExport ? Math.floor((Date.now() - lastExport) / (1000 * 60 * 60 * 24)) : null;
-  const exportWarning = daysSinceExport === null || daysSinceExport >= 7
-    ? ` <span style="color:var(--orange,#f59e0b);font-weight:700">⚠ バックアップ推奨</span>` : "";
+  const exportWarning = daysSinceExport === null || daysSinceExport >= 2
+    ? ` <span style="color:var(--orange,#f59e0b);font-weight:700">⚠ ファイル保存推奨</span>` : " ✅";
   el.innerHTML = `
     <div>🖥️ メモリ（現在）: <strong>${serverCount}社</strong></div>
     <div>💾 メインストレージ: <strong>${mainCount}社</strong>（最終更新: ${mainDate}）</div>
     <div>🛡️ バックアップ: <strong>${backupCount}社</strong>（最終更新: ${backupDate}）</div>
-    <div>📤 最終エクスポート: <strong>${exportDate}</strong>${exportWarning}</div>
-    <div style="margin-top:6px;font-size:12px;color:var(--text-3,#9ca3af)">リデプロイ・サーバー再起動が起きてもローカルデータは自動復元されます</div>
+    <div>📁 最終ファイル保存: <strong>${exportDate}</strong>${exportWarning}</div>
+    <div style="margin-top:6px;font-size:12px;color:var(--text-3,#9ca3af)">毎日自動でファイルにバックアップされます。ダウンロードフォルダを確認してください。</div>
   `;
 }
 
@@ -3153,10 +3158,29 @@ async function forcePushToServer() {
   if (!state.companies.length) { toast("現在表示されているデータがありません"); return; }
   try {
     await _pushToServer();
-    toast(`${state.companies.length}社のデータをサーバーに同期しました`);
+    toast(`${state.companies.length}社のデータをサーバーに送りました`);
     checkDataStatus();
   } catch (e) {
     toast("サーバー同期に失敗しました: " + e.message, 5000);
+  }
+}
+
+async function forcePullFromServer() {
+  try {
+    const data = await fetchJson("/api/jobs");
+    if (!(data.companies || []).length) { toast("サーバーにデータがありません"); return; }
+    const esCount = data.companies.reduce((n, c) => n + (c.es || []).length, 0);
+    const ivCount  = data.companies.reduce((n, c) => n + (c.interviews || []).length, 0);
+    if (!confirm(`サーバーのデータで上書きします。\n\n企業: ${data.companies.length}社・ES: ${esCount}件・面接: ${ivCount}件\n\nよろしいですか？`)) return;
+    state.companies = data.companies;
+    state.schedules = data.schedules || [];
+    if (data.profile) state.profile = { ...state.profile, ...data.profile };
+    _writeStorage({ companies: state.companies, schedules: state.schedules, profile: state.profile, updatedAt: data.updatedAt || Date.now() });
+    toast(`取得完了：${state.companies.length}社・ES${esCount}件`);
+    checkDataStatus();
+    handleRoute();
+  } catch (e) {
+    toast("サーバーからの取得に失敗しました: " + e.message, 5000);
   }
 }
 
@@ -3222,23 +3246,21 @@ async function saveAiKeys() {
   loadAiStatus();
 }
 
-function autoExport() {
-  const data = JSON.stringify({
-    companies: state.companies,
-    schedules: state.schedules,
-    profile: state.profile,
-    exportedAt: Date.now()
-  }, null, 2);
+function autoExport(silent = false) {
+  if (!state.companies.length) return;
+  const data = JSON.stringify({ companies: state.companies, schedules: state.schedules, profile: state.profile, exportedAt: Date.now() }, null, 2);
   const blob = new Blob([data], { type: "application/json" });
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
   a.href = url;
-  a.download = `shukatsu-ai-backup-${today()}.json`;
+  a.download = `shukatsu-backup-${today()}.json`;
   a.click();
   URL.revokeObjectURL(url);
   localStorage.setItem("lastExportDate", String(Date.now()));
   sessionStorage.setItem("autoExportedThisSession", "1");
-  toast("自動バックアップ完了 📥", 4000);
+  if (silent) {
+    toast(`自動バックアップ完了（${state.companies.length}社）。ファイルに保存されました。`, 6000);
+  }
   checkDataStatus();
 }
 
@@ -3252,6 +3274,7 @@ function exportData() {
   a.click();
   URL.revokeObjectURL(url);
   localStorage.setItem("lastExportDate", String(Date.now()));
+  sessionStorage.setItem("autoExportedThisSession", "1");
   toast("エクスポートしました");
   checkDataStatus();
 }

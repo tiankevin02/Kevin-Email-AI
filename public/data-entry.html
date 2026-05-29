@@ -1,0 +1,437 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+<title>就活データ入力ツール</title>
+<style>
+  :root {
+    --bg: #0f1117; --surface: #1a1d27; --surface2: #22263a;
+    --border: #2d3148; --accent: #6c7fff; --green: #22c55e;
+    --red: #ef4444; --orange: #f59e0b; --text1: #e8eaf6;
+    --text2: #9ca3cf; --text3: #6b7280;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: var(--bg); color: var(--text1); font-family: -apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif; font-size: 14px; }
+  .header { background: var(--surface); border-bottom: 1px solid var(--border); padding: 14px 16px; position: sticky; top: 0; z-index: 100; }
+  .header h1 { font-size: 16px; font-weight: 800; }
+  .header p { font-size: 11px; color: var(--text3); margin-top: 2px; }
+  .header-btns { display: flex; gap: 6px; margin-top: 10px; flex-wrap: wrap; }
+  .container { max-width: 780px; margin: 0 auto; padding: 14px; }
+  .btn { display: inline-flex; align-items: center; justify-content: center; gap: 5px; padding: 8px 14px; border-radius: 8px; border: none; cursor: pointer; font-size: 13px; font-weight: 700; white-space: nowrap; }
+  .btn:active { opacity: .7; }
+  .btn-green { background: var(--green); color: #fff; }
+  .btn-accent { background: var(--accent); color: #fff; }
+  .btn-danger { background: var(--red); color: #fff; }
+  .btn-ghost { background: transparent; color: var(--text2); border: 1px solid var(--border); }
+  .btn-sm { padding: 5px 9px; font-size: 12px; }
+  .btn-orange { background: var(--orange); color: #fff; }
+
+  /* Sync box */
+  .sync-box { background: var(--surface2); border: 1px solid var(--border); border-radius: 12px; padding: 14px; margin-bottom: 14px; }
+  .sync-box h3 { font-size: 13px; font-weight: 700; margin-bottom: 8px; color: var(--text2); }
+  .sync-row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+  .sync-status { font-size: 12px; color: var(--text3); margin-top: 6px; }
+  .sync-status.ok { color: var(--green); }
+  .sync-status.err { color: var(--red); }
+
+  /* Summary */
+  .summary-bar { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 10px 14px; display: flex; gap: 20px; margin-bottom: 14px; }
+  .summary-item { display: flex; flex-direction: column; align-items: center; gap: 1px; }
+  .summary-val { font-size: 22px; font-weight: 800; color: var(--accent); }
+  .summary-lbl { font-size: 10px; color: var(--text3); }
+
+  /* Company card */
+  .card { background: var(--surface); border: 1px solid var(--border); border-radius: 14px; margin-bottom: 12px; overflow: hidden; }
+  .card-header { padding: 13px 14px; display: flex; align-items: center; justify-content: space-between; gap: 8px; background: var(--surface2); cursor: pointer; user-select: none; }
+  .card-title { font-weight: 700; font-size: 14px; display: flex; align-items: center; gap: 8px; overflow: hidden; }
+  .card-num { background: var(--accent); color: #fff; border-radius: 50%; width: 22px; height: 22px; min-width: 22px; display: flex; align-items: center; justify-content: center; font-size: 11px; font-weight: 700; }
+  .card-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .toggle-icon { font-size: 18px; color: var(--text3); transition: transform .2s; flex-shrink: 0; }
+  .card.collapsed .toggle-icon { transform: rotate(-90deg); }
+  .card.collapsed .card-body { display: none; }
+  .card-body { padding: 14px; display: flex; flex-direction: column; gap: 11px; }
+
+  /* Fields */
+  .field { display: flex; flex-direction: column; gap: 4px; }
+  .label { font-size: 11px; font-weight: 700; color: var(--text3); letter-spacing: .3px; }
+  input, textarea, select { background: var(--surface2); border: 1px solid var(--border); border-radius: 8px; color: var(--text1); padding: 9px 11px; font-size: 16px; width: 100%; outline: none; font-family: inherit; transition: border-color .15s; }
+  input:focus, textarea:focus, select:focus { border-color: var(--accent); }
+  textarea { resize: vertical; min-height: 75px; line-height: 1.5; }
+  .row2 { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+
+  /* ES */
+  .es-section { margin-top: 4px; }
+  .es-section-title { font-size: 12px; font-weight: 700; color: var(--text2); margin-bottom: 8px; }
+  .es-entry { background: var(--bg); border: 1px solid var(--border); border-radius: 10px; padding: 11px; margin-bottom: 8px; display: flex; flex-direction: column; gap: 9px; }
+  .es-entry-top { display: flex; align-items: center; justify-content: space-between; }
+  .es-num { font-size: 11px; font-weight: 700; color: var(--accent); background: #6c7fff1a; padding: 2px 8px; border-radius: 20px; }
+  .char-count { font-size: 11px; color: var(--text3); text-align: right; margin-top: 2px; }
+  .char-count.warn { color: var(--orange); }
+  .char-count.over { color: var(--red); font-weight: 700; }
+  .add-es-btn { width: 100%; padding: 9px; border: 1.5px dashed var(--border); border-radius: 9px; background: transparent; color: var(--text3); cursor: pointer; font-size: 13px; font-weight: 700; }
+  .add-es-btn:hover, .add-es-btn:active { border-color: var(--accent); color: var(--accent); }
+
+  /* Toast */
+  .toast { position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%); background: #1e2235; color: var(--text1); padding: 9px 18px; border-radius: 20px; font-size: 13px; font-weight: 700; border: 1px solid var(--border); z-index: 999; pointer-events: none; opacity: 0; transition: opacity .2s; white-space: nowrap; }
+  .toast.show { opacity: 1; }
+  .hint-box { background: #6c7fff11; border: 1px solid #6c7fff33; border-radius: 10px; padding: 12px; font-size: 12px; color: var(--text2); line-height: 1.7; margin-bottom: 14px; }
+  .hint-box strong { color: var(--text1); }
+  @media (max-width: 500px) { .row2 { grid-template-columns: 1fr; } }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:10px">
+    <div>
+      <h1>就活データ入力ツール</h1>
+      <p>サーバー不要・完全オフライン。入力して「JSONを出力」→アプリにインポートで同期</p>
+    </div>
+    <button class="btn btn-ghost btn-sm" onclick="openClaude()" title="Claudeと並べて使う" style="flex-shrink:0;margin-top:2px">
+      🤖 Claudeを開く
+    </button>
+  </div>
+  <div class="header-btns">
+    <button class="btn btn-green" onclick="exportJSON()">📥 JSONを出力</button>
+    <label class="btn btn-ghost" style="cursor:pointer">
+      📂 JSONを読込
+      <input type="file" accept=".json" style="display:none" onchange="importJSON(this)">
+    </label>
+    <button class="btn btn-accent" onclick="addCompany()">＋ 企業追加</button>
+    <button class="btn btn-ghost btn-sm" onclick="saveLocal()">💾 端末に保存</button>
+  </div>
+</div>
+
+<div class="container">
+
+  <div class="hint-box">
+    <strong>📱 iPhone ↔ PC 同期方法（Render不要）</strong><br>
+    ① このHTMLファイルを <strong>iCloud Drive</strong> に保存 → どちらのデバイスでも開ける<br>
+    ② データ入力後「JSONを出力」→ <strong>iCloud Drive に保存</strong><br>
+    ③ もう一方のデバイスでアプリを開き 設定 → 「ファイルを選択」でインポート<br>
+    <br>
+    <strong>💡 ショートカット：</strong>「端末に保存」ボタンでこのページのデータを保持。次に開いたとき自動で復元されます。
+  </div>
+
+  <div class="summary-bar">
+    <div class="summary-item"><div class="summary-val" id="s-co">0</div><div class="summary-lbl">企業</div></div>
+    <div class="summary-item"><div class="summary-val" id="s-es">0</div><div class="summary-lbl">ES設問</div></div>
+    <div class="summary-item"><div class="summary-val" id="s-ans">0</div><div class="summary-lbl">回答済み</div></div>
+  </div>
+
+  <div id="list"></div>
+  <div id="empty" style="text-align:center;color:var(--text3);padding:30px;font-size:13px">「企業追加」ボタンで企業を追加してください</div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+const STATUSES = ["エントリー","書類選考中","ES提出中","WEBテスト","一次面接","二次面接","三次面接","最終面接","内定","お見送り"];
+const INDUSTRIES = ["コンサルティング","IT・通信","金融・保険","商社","メーカー","広告・メディア","不動産・建設","医療・製薬","小売・流通","官公庁・公共"];
+const LS_KEY = "shukatsu-entry-tool-v1";
+
+let companies = [];
+
+function uid() { return Math.random().toString(36).slice(2,10) + Date.now().toString(36); }
+const now = () => Date.now();
+
+// Auto-load from localStorage on start
+(function() {
+  try {
+    const saved = localStorage.getItem(LS_KEY);
+    if (saved) { companies = JSON.parse(saved); }
+  } catch {}
+  render();
+})();
+
+function saveLocal() {
+  try {
+    syncFromDOM();
+    localStorage.setItem(LS_KEY, JSON.stringify(companies));
+    showToast("💾 このページに保存しました");
+  } catch { showToast("保存に失敗しました"); }
+}
+
+// Auto-save every 30 seconds
+setInterval(() => {
+  try { syncFromDOM(); localStorage.setItem(LS_KEY, JSON.stringify(companies)); } catch {}
+}, 30000);
+
+function syncFromDOM() {
+  companies.forEach(c => {
+    const nameEl = document.getElementById("f-name-" + c.id);
+    const industryEl = document.getElementById("f-ind-" + c.id);
+    const industryCustomEl = document.getElementById("f-ind-custom-" + c.id);
+    const statusEl = document.getElementById("f-status-" + c.id);
+    const typeEl = document.getElementById("f-type-" + c.id);
+    const urlEl = document.getElementById("f-url-" + c.id);
+    const loginEl = document.getElementById("f-login-" + c.id);
+    const notesEl = document.getElementById("f-notes-" + c.id);
+    if (nameEl) c.name = nameEl.value;
+    if (industryEl) {
+      const val = industryEl.value;
+      if (val === "__custom" && industryCustomEl) c.industry = industryCustomEl.value;
+      else if (val) c.industry = val;
+    }
+    if (statusEl) c.status = statusEl.value;
+    if (typeEl) c.selectionType = typeEl.value;
+    if (urlEl) c.mypageUrl = urlEl.value;
+    if (loginEl) c.mypageId = loginEl.value;
+    if (notesEl) c.notes = notesEl.value;
+    c.es.forEach(e => {
+      const qEl = document.getElementById("es-q-" + e.id);
+      const aEl = document.getElementById("es-a-" + e.id);
+      const mEl = document.getElementById("es-m-" + e.id);
+      if (qEl) e.question = qEl.value;
+      if (aEl) e.answer = aEl.value;
+      if (mEl) e.maxChars = mEl.value ? parseInt(mEl.value) : null;
+    });
+  });
+}
+
+function addCompany() {
+  syncFromDOM();
+  const c = { id: uid(), name: "", industry: "", status: "本選考", selectionType: "本選考", mypageUrl: "", mypageId: "", notes: "", es: [], interviews: [], createdAt: now(), updatedAt: now() };
+  companies.push(c);
+  render();
+  setTimeout(() => { const el = document.getElementById("f-name-" + c.id); if (el) el.focus(); }, 80);
+}
+
+function removeCompany(id) {
+  if (!confirm("この企業を削除しますか？")) return;
+  syncFromDOM();
+  companies = companies.filter(c => c.id !== id);
+  render();
+}
+
+function addES(cid) {
+  syncFromDOM();
+  const c = companies.find(c => c.id === cid);
+  if (!c) return;
+  c.es.push({ id: uid(), question: "", answer: "", maxChars: null, aiReview: null, aiAdvice: null, createdAt: now(), updatedAt: now() });
+  render();
+  setTimeout(() => {
+    const all = document.querySelectorAll(`[id^="es-q-"]`);
+    if (all.length) all[all.length-1].focus();
+  }, 80);
+}
+
+function removeES(cid, esId) {
+  syncFromDOM();
+  const c = companies.find(c => c.id === cid);
+  if (!c) return;
+  c.es = c.es.filter(e => e.id !== esId);
+  render();
+}
+
+function updateCount(esId, val, maxChars) {
+  const el = document.getElementById("cnt-" + esId);
+  if (!el) return;
+  const n = val.length;
+  const max = maxChars ? parseInt(maxChars) : 0;
+  el.textContent = max ? `${n}/${max}字` : `${n}字`;
+  el.className = "char-count" + (max && n > max ? " over" : max && n > max * .9 ? " warn" : "");
+}
+
+function esc(s) { return (s||"").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;"); }
+
+function selOpts(list, cur) {
+  return list.map(v => `<option value="${esc(v)}" ${v===cur?"selected":""}>${esc(v)}</option>`).join("");
+}
+
+function render() {
+  const list = document.getElementById("list");
+  const empty = document.getElementById("empty");
+  empty.style.display = companies.length ? "none" : "block";
+  list.innerHTML = companies.map((c, i) => {
+    const isCustomInd = c.industry && !INDUSTRIES.includes(c.industry);
+    const esHtml = c.es.map((e, ei) => `
+      <div class="es-entry">
+        <div class="es-entry-top">
+          <span class="es-num">設問 ${ei+1}</span>
+          <button class="btn btn-danger btn-sm" onclick="removeES('${c.id}','${e.id}')">削除</button>
+        </div>
+        <div class="field">
+          <div class="label">設問文</div>
+          <textarea id="es-q-${e.id}" rows="2" placeholder="例: 学生時代に最も力を入れたことを教えてください">${esc(e.question)}</textarea>
+        </div>
+        <div class="field" style="max-width:160px">
+          <div class="label">文字数制限（任意）</div>
+          <input id="es-m-${e.id}" type="number" placeholder="例: 400" value="${e.maxChars||""}"
+            onchange="updateCount('${e.id}',document.getElementById('es-a-${e.id}').value,this.value)">
+        </div>
+        <div class="field">
+          <div class="label">回答</div>
+          <textarea id="es-a-${e.id}" rows="6" placeholder="回答を入力..."
+            oninput="updateCount('${e.id}',this.value,document.getElementById('es-m-${e.id}').value)">${esc(e.answer)}</textarea>
+          <div class="char-count${e.maxChars&&e.answer.length>e.maxChars?" over":e.maxChars&&e.answer.length>e.maxChars*.9?" warn":""}"
+            id="cnt-${e.id}">${e.maxChars?e.answer.length+"/"+e.maxChars+"字":e.answer.length+"字"}</div>
+        </div>
+      </div>`).join("");
+
+    return `
+    <div class="card${i===0?"":" collapsed"}" id="card-${c.id}">
+      <div class="card-header" onclick="toggleCard('${c.id}')">
+        <div class="card-title">
+          <span class="card-num">${i+1}</span>
+          <span class="card-name" id="card-label-${c.id}">${esc(c.name)||"（企業名未入力）"}</span>
+          ${c.es.length?`<span style="font-size:11px;color:var(--text3)">ES${c.es.length}</span>`:""}
+        </div>
+        <div style="display:flex;gap:6px;align-items:center">
+          <button class="btn btn-danger btn-sm" onclick="event.stopPropagation();removeCompany('${c.id}')">削除</button>
+          <span class="toggle-icon">›</span>
+        </div>
+      </div>
+      <div class="card-body">
+        <div class="row2">
+          <div class="field">
+            <div class="label">企業名 *</div>
+            <input id="f-name-${c.id}" type="text" placeholder="例: マッキンゼー" value="${esc(c.name)}"
+              oninput="document.getElementById('card-label-${c.id}').textContent=this.value||'（企業名未入力）'">
+          </div>
+          <div class="field">
+            <div class="label">業界</div>
+            <select id="f-ind-${c.id}" onchange="handleIndChange('${c.id}',this.value)">
+              <option value="">選択してください</option>
+              ${selOpts(INDUSTRIES, isCustomInd ? "" : c.industry)}
+              <option value="__custom" ${isCustomInd?"selected":""}>その他（直接入力）</option>
+            </select>
+          </div>
+        </div>
+        ${isCustomInd ? `<div class="field"><div class="label">業界（直接入力）</div><input id="f-ind-custom-${c.id}" type="text" value="${esc(c.industry)}" placeholder="業界を入力"></div>` : `<div id="ind-custom-wrap-${c.id}"></div>`}
+        <div class="row2">
+          <div class="field">
+            <div class="label">選考状況</div>
+            <select id="f-status-${c.id}">${selOpts(STATUSES, c.status)}</select>
+          </div>
+          <div class="field">
+            <div class="label">種別</div>
+            <select id="f-type-${c.id}">
+              <option value="本選考" ${c.selectionType==="本選考"?"selected":""}>本選考</option>
+              <option value="インターン" ${c.selectionType==="インターン"?"selected":""}>インターン</option>
+            </select>
+          </div>
+        </div>
+        <div class="row2">
+          <div class="field">
+            <div class="label">マイページURL</div>
+            <input id="f-url-${c.id}" type="url" placeholder="https://..." value="${esc(c.mypageUrl)}">
+          </div>
+          <div class="field">
+            <div class="label">マイページID / パスワード</div>
+            <input id="f-login-${c.id}" type="text" placeholder="メールや学籍番号など" value="${esc(c.mypageId)}">
+          </div>
+        </div>
+        <div class="field">
+          <div class="label">メモ</div>
+          <textarea id="f-notes-${c.id}" rows="2" placeholder="締切・選考情報など自由メモ">${esc(c.notes||"")}</textarea>
+        </div>
+        <div class="es-section">
+          <div class="es-section-title">ES・エントリーシート（${c.es.length}件）</div>
+          ${esHtml}
+          <button class="add-es-btn" onclick="addES('${c.id}')">＋ ES設問を追加</button>
+        </div>
+      </div>
+    </div>`;
+  }).join("");
+  updateSummary();
+}
+
+function handleIndChange(cid, val) {
+  const wrap = document.getElementById("ind-custom-wrap-" + cid);
+  if (!wrap) return;
+  if (val === "__custom") {
+    wrap.innerHTML = `<div class="field"><div class="label">業界（直接入力）</div><input id="f-ind-custom-${cid}" type="text" placeholder="業界を入力" autofocus></div>`;
+  } else {
+    wrap.innerHTML = "";
+    const c = companies.find(c => c.id === cid);
+    if (c) c.industry = val;
+  }
+}
+
+function toggleCard(id) {
+  document.getElementById("card-" + id)?.classList.toggle("collapsed");
+}
+
+function updateSummary() {
+  const totalES = companies.reduce((n,c) => n+c.es.length, 0);
+  const ans = companies.reduce((n,c) => n+c.es.filter(e=>(e.answer||"").trim().length>0).length, 0);
+  document.getElementById("s-co").textContent = companies.length;
+  document.getElementById("s-es").textContent = totalES;
+  document.getElementById("s-ans").textContent = ans;
+}
+
+function exportJSON() {
+  syncFromDOM();
+  const missing = companies.filter(c => !c.name.trim());
+  if (missing.length) { showToast("企業名が空の項目があります"); return; }
+  const payload = { companies, schedules: [], profile: {}, exportedAt: now() };
+  const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  const d = new Date();
+  a.download = `shukatsu-${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}.json`;
+  a.click();
+  URL.revokeObjectURL(url);
+  localStorage.setItem(LS_KEY, JSON.stringify(companies));
+  showToast(`✅ ${companies.length}社・ES${companies.reduce((n,c)=>n+c.es.length,0)}件を出力しました`);
+}
+
+function importJSON(input) {
+  const file = input.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = e => {
+    try {
+      const data = JSON.parse(e.target.result);
+      const arr = data.companies || [];
+      if (!arr.length) { showToast("企業データがありません"); return; }
+      if (companies.length && !confirm(`現在の${companies.length}社を${arr.length}社で上書きしますか？`)) return;
+      companies = arr.map(c => ({
+        id: c.id || uid(), name: c.name || "", industry: c.industry || "",
+        status: c.status || "エントリー", selectionType: c.selectionType || "本選考",
+        mypageUrl: c.mypageUrl || "", mypageId: c.mypageId || "", notes: c.notes || "",
+        es: (c.es||[]).map(e => ({
+          id: e.id||uid(), question: e.question||"", answer: e.answer||"",
+          maxChars: e.maxChars||null, aiReview: e.aiReview||null, aiAdvice: e.aiAdvice||null,
+          createdAt: e.createdAt||now(), updatedAt: e.updatedAt||now()
+        })),
+        interviews: c.interviews||[], createdAt: c.createdAt||now(), updatedAt: c.updatedAt||now()
+      }));
+      render();
+      showToast(`✅ ${companies.length}社を読み込みました`);
+    } catch { showToast("読み込みに失敗しました"); }
+  };
+  reader.readAsText(file);
+  input.value = "";
+}
+
+function openClaude() {
+  // Open Claude in a new window sized to fill the right half of the screen
+  const w = Math.floor(window.screen.width / 2);
+  const h = window.screen.height;
+  const left = window.screen.width - w;
+  const claudeWin = window.open("https://claude.ai/new", "claude-ai", `width=${w},height=${h},left=${left},top=0`);
+  // Try to resize this window to the left half
+  try {
+    window.moveTo(0, 0);
+    window.resizeTo(w, h);
+  } catch {}
+  if (!claudeWin) {
+    showToast("ポップアップがブロックされました。設定から許可してください");
+  } else {
+    showToast("Claudeを右半分に開きました。並べて使ってください");
+  }
+}
+
+function showToast(msg) {
+  const t = document.getElementById("toast");
+  t.textContent = msg;
+  t.classList.add("show");
+  setTimeout(() => t.classList.remove("show"), 3000);
+}
+</script>
+</body>
+</html>
