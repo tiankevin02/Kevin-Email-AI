@@ -3143,19 +3143,28 @@ function renderSettings() {
 }
 
 async function saveUpstashConfig() {
-  const url   = (document.getElementById("upstash-url-input")?.value || "").trim();
+  const url   = (document.getElementById("upstash-url-input")?.value || "").trim().replace(/\/$/, "");
   const token = (document.getElementById("upstash-token-input")?.value || "").trim();
   const statusEl = document.getElementById("upstash-status");
   if (!url || !token) { toast("URLとTokenを両方入力してください"); return; }
+  if (!url.startsWith("https://")) { alert("URLはhttps://で始まる必要があります。\n現在の値: " + url); return; }
   localStorage.setItem("upstash-config", JSON.stringify({ url, token }));
   if (statusEl) statusEl.textContent = "接続テスト中...";
-  const data = await upstashGet();
-  if (data !== null) {
+  try {
+    const res = await fetch(`${url}/get/jobs-data`, { headers: { Authorization: `Bearer ${token}` } });
+    const text = await res.text();
+    if (!res.ok) {
+      if (statusEl) statusEl.textContent = "❌ 接続失敗";
+      alert(`Upstash接続失敗 HTTP ${res.status}:\n${text.slice(0, 300)}\n\nURLとTokenが正しいか確認してください。`);
+      return;
+    }
     if (statusEl) statusEl.textContent = "✅ 接続成功！";
-    toast(`✅ Upstash接続成功！クラウドに${(data.companies||[]).length}社のデータがあります`, 5000);
-  } else {
+    const json = JSON.parse(text);
+    const count = json.result ? (JSON.parse(json.result).companies || []).length : 0;
+    toast(`✅ Upstash接続成功！クラウドに${count}社のデータがあります`, 5000);
+  } catch (e) {
     if (statusEl) statusEl.textContent = "❌ 接続失敗";
-    toast("❌ 接続失敗。URLとTokenを確認してください", 6000);
+    alert(`ネットワークエラー:\n${e.name}: ${e.message}\n\nCORSまたはネットワーク問題の可能性があります。`);
   }
 }
 
