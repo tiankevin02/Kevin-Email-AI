@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <title>データ復元</title>
+  <style>
+    body { font-family: sans-serif; display: flex; align-items: center; justify-content: center; min-height: 100vh; margin: 0; background: #0f172a; color: #e2e8f0; }
+    .box { background: #1e293b; border-radius: 16px; padding: 40px; max-width: 480px; width: 90%; text-align: center; }
+    h1 { font-size: 20px; margin-bottom: 8px; }
+    p { color: #94a3b8; font-size: 14px; margin-bottom: 24px; }
+    button { background: #4f46e5; color: white; border: none; border-radius: 8px; padding: 14px 32px; font-size: 16px; cursor: pointer; width: 100%; }
+    button:disabled { background: #334155; cursor: not-allowed; }
+    .status { margin-top: 20px; font-size: 14px; min-height: 24px; }
+    .ok { color: #34d399; }
+    .err { color: #f87171; }
+  </style>
+</head>
+<body>
+<div class="box">
+  <h1>就活AIデータ復元</h1>
+  <p>ボタンを押すと企業10社・スケジュール9件をVercelに保存します</p>
+  <button id="btn" onclick="restore()">復元する</button>
+  <div class="status" id="status"></div>
+</div>
+<script>
+const DATA = {
+  companies: [
+    {id:"mpcx5ljh881qs",name:"アクセンチュア",industry:"コンサル",status:"ES提出中",url:"",notes:"",es:[],webTest:{notes:"",aiInfo:null},interviews:[],createdAt:"2026-05-20T02:40:51+09:00",updatedAt:"2026-05-20T02:40:51+09:00"},
+    {id:"mpcx5x98we89o",name:"pwc",industry:"ビジネスコンサル",status:"WEBテスト",url:"",notes:"",es:[{id:"mpd0tjkngdkum",question:"学生時代で最も困難だったことと乗り越え方を教えてください",answer:"",maxChars:400,aiReview:null,createdAt:"2026-05-20T04:23:27+09:00",updatedAt:"2026-05-20T04:23:27+09:00"}],webTest:{notes:"",aiInfo:null},interviews:[],createdAt:"2026-05-20T02:41:06+09:00",updatedAt:"2026-05-20T04:23:27+09:00"},
+    {id:"mpcxcbm8c799d",name:"GMO",industry:"IT",status:"一次面接",url:"",notes:"",es:[],webTest:{notes:"",aiInfo:null},interviews:[],createdAt:"2026-05-20T02:46:04+09:00",updatedAt:"2026-05-20T02:47:07+09:00"},
+    {id:"mpcxeakvkv4uf",name:"ベイカレント",industry:"コンサル",status:"WEBテスト",url:"",notes:"",es:[],webTest:{notes:"",aiInfo:null},interviews:[],createdAt:"2026-05-20T02:47:36+09:00",updatedAt:"2026-05-20T03:49:19+09:00"},
+    {id:"mpcxgi4pr54tg",name:"TCS",industry:"コンサル",status:"一次面接",url:"",notes:"",es:[],webTest:{notes:"",aiInfo:null},interviews:[],createdAt:"2026-05-20T02:49:19+09:00",updatedAt:"2026-05-20T02:49:19+09:00"},
+    {id:"mpcxho3tbqz9d",name:"マッキンゼー",industry:"コンサル",status:"エントリー",url:"",notes:"",es:[],webTest:{notes:"",aiInfo:null},interviews:[],createdAt:"2026-05-20T02:50:14+09:00",updatedAt:"2026-05-20T02:50:14+09:00"},
+    {id:"mpcxj3e44pvb2",name:"BCG",industry:"コンサル",status:"書類選考中",url:"",notes:"",es:[],webTest:{notes:"",aiInfo:null},interviews:[],createdAt:"2026-05-20T02:51:20+09:00",updatedAt:"2026-05-20T02:51:20+09:00"},
+    {id:"mpcxkt80vrhcz",name:"EY",industry:"コンサル",status:"エントリー",url:"",notes:"",es:[],webTest:{notes:"",aiInfo:null},interviews:[],createdAt:"2026-05-20T02:52:40+09:00",updatedAt:"2026-05-20T02:52:40+09:00"},
+    {id:"mpcxm2y042pf0",name:"P＆G",industry:"メーカー",status:"エントリー",url:"",notes:"",es:[],webTest:{notes:"",aiInfo:null},interviews:[],createdAt:"2026-05-20T02:53:40+09:00",updatedAt:"2026-05-20T02:53:40+09:00"},
+    {id:"mpcxu662qgn9x",name:"ZSアソシエイツ",industry:"コンサル",status:"お見送り",url:"",notes:"",es:[],webTest:{notes:"",aiInfo:null},interviews:[],createdAt:"2026-05-20T02:59:57+09:00",updatedAt:"2026-05-20T02:59:57+09:00"}
+  ],
+  schedules: [
+    {id:"mpcx6fk0vqzi7",companyId:"mpcx5x98we89o",title:"テスト締め切り",type:"WEBテスト",date:"2026-05-20",time:"23:59",notes:"",createdAt:"2026-05-20T02:41:30+09:00"},
+    {id:"mpcxd8y8be777",companyId:"mpcxcbm8c799d",title:"GMO面接締め切り（AI)",type:"面接",date:"2026-05-15",time:"",notes:"",createdAt:"2026-05-20T02:46:48+09:00"},
+    {id:"mpcxepvscmzqj",companyId:"mpcxeakvkv4uf",title:"ベイカレント選考会",type:"WEBテスト",date:"2026-05-23",time:"",notes:"",createdAt:"2026-05-20T02:47:56+09:00"},
+    {id:"mpcxh7omg9az6",companyId:"mpcxgi4pr54tg",title:"TCSオープンカンパニー",type:"面接",date:"2026-05-27",time:"14:15",notes:"",createdAt:"2026-05-20T02:49:53+09:00"},
+    {id:"mpcxi3hzynwah",companyId:"mpcxho3tbqz9d",title:"マッキンゼーES締め切り",type:"ES締切",date:"2026-05-30",time:"",notes:"",createdAt:"2026-05-20T02:50:34+09:00"},
+    {id:"mpcxjlxpwd2cl",companyId:"mpcxj3e44pvb2",title:"BCGのES締め切り",type:"ES締切",date:"2026-06-03",time:"",notes:"",createdAt:"2026-05-20T02:51:44+09:00"},
+    {id:"mpcxka7bbfudd",companyId:"mpcx5ljh881qs",title:"アクセンチュアES締め切り",type:"ES締切",date:"2026-06-04",time:"",notes:"",createdAt:"2026-05-20T02:52:16+09:00"},
+    {id:"mpcxl4h3o4dx4",companyId:"mpcxkt80vrhcz",title:"EYのES締め切り",type:"ES締切",date:"2026-06-15",time:"",notes:"",createdAt:"2026-05-20T02:52:55+09:00"},
+    {id:"mpcxmgl17tm3l",companyId:"mpcxm2y042pf0",title:"P＆GのES締め切り",type:"ES締切",date:"2026-06-29",time:"",notes:"",createdAt:"2026-05-20T02:53:57+09:00"}
+  ],
+  profile: {gakuchika:"",selfPr:"",motivation:"",skills:"",other:""},
+  updatedAt: Date.now()
+};
+
+async function restore() {
+  const btn = document.getElementById("btn");
+  const status = document.getElementById("status");
+  btn.disabled = true;
+  btn.textContent = "送信中...";
+  status.textContent = "";
+  try {
+    const res = await fetch("/api/jobs", {
+      method: "POST",
+      headers: {"content-type": "application/json"},
+      body: JSON.stringify(DATA)
+    });
+    if (!res.ok) throw new Error("HTTP " + res.status);
+    status.innerHTML = '<span class="ok">✓ 復元完了！アプリを開いてください</span>';
+    btn.textContent = "完了";
+    setTimeout(() => { location.href = "/jobs/"; }, 1500);
+  } catch(e) {
+    status.innerHTML = '<span class="err">エラー: ' + e.message + '</span>';
+    btn.disabled = false;
+    btn.textContent = "再試行";
+  }
+}
+</script>
+</body>
+</html>
