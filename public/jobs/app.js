@@ -3388,22 +3388,16 @@ function forceBackup() {
 async function loadAiStatus() {
   const el = document.getElementById("settings-ai-status");
   if (!el) return;
-  try {
-    const s = await fetchJson("/api/status");
-    const local = getStoredAiKeys();
-    // Support both Render format (s.savedConfig / s.configFromEnv) and Vercel format (s.ai)
-    const providers = [
-      { name: "Gemini",    configured: s.ai?.gemini    || s.savedConfig?.geminiApiKey    || s.configFromEnv?.gemini    || !!local.geminiApiKey },
-      { name: "OpenAI",    configured: s.ai?.openai    || s.savedConfig?.openAIKey       || s.configFromEnv?.openAI    || !!local.openAIKey },
-      { name: "Anthropic", configured: s.ai?.anthropic || s.savedConfig?.anthropicApiKey || s.configFromEnv?.anthropic || !!local.anthropicApiKey },
-      { name: "Grok",      configured: s.ai?.grok      || s.savedConfig?.grokApiKey      || s.configFromEnv?.grok      || !!local.grokApiKey },
-    ].filter((p) => p.configured);
-    el.innerHTML = providers.length
-      ? `<div style="display:flex;gap:8px;flex-wrap:wrap">${providers.map((p) => `<span class="chip chip-offer">${p.name} ✓</span>`).join("")}</div>`
-      : `<span class="chip chip-reject">AIキー未設定 — 下にキーを入力してください</span>`;
-  } catch {
-    el.innerHTML = `<span style="font-size:12.5px;color:var(--text-3)">状態取得に失敗しました</span>`;
-  }
+  const local = getStoredAiKeys();
+  const providers = [
+    { name: "Gemini",    configured: !!local.geminiApiKey },
+    { name: "OpenAI",    configured: !!local.openAIKey },
+    { name: "Anthropic", configured: !!local.anthropicApiKey },
+    { name: "Grok",      configured: !!local.grokApiKey },
+  ].filter((p) => p.configured);
+  el.innerHTML = providers.length
+    ? `<div style="display:flex;gap:8px;flex-wrap:wrap">${providers.map((p) => `<span class="chip chip-offer">${p.name} ✓</span>`).join("")}</div>`
+    : `<span class="chip chip-reject">AIキー未設定 — 下にキーを入力してください</span>`;
 }
 
 async function saveAiKeys() {
