@@ -197,8 +197,66 @@ async function upstashSet(data) {
       headers: { Authorization: `Bearer ${cfg.token}`, "Content-Type": "application/json" },
       body: JSON.stringify([JSON.stringify(data)]),
     });
-    return res.ok;
+    if (!res.ok) return false;
+    const txt = await res.text();
+    // Upstash returns {"result":"OK"} on success
+    try { const j = JSON.parse(txt); return j.result === "OK"; } catch { return false; }
   } catch { return false; }
+}
+
+async function debugUpstash() {
+  const cfg = getUpstashConfig();
+  if (!cfg?.url || !cfg?.token) { alert("Upstash設定がありません。設定→クラウド同期でURLとTokenを入力してください。"); return; }
+  let report = "=== Upstash診断 ===\n\n";
+  // Test GET
+  try {
+    const r = await fetch(`${cfg.url}/get/jobs-data`, { headers: { Authorization: `Bearer ${cfg.token}` } });
+    const txt = await r.text();
+    report += `GET /get/jobs-data\n  HTTP: ${r.status}\n  Body: ${txt.slice(0, 500)}\n\n`;
+  } catch(e) { report += `GET エラー: ${e.message}\n\n`; }
+  // Test SET with tiny payload
+  try {
+    const testVal = JSON.stringify({ _test: true, ts: Date.now() });
+    const r = await fetch(`${cfg.url}/set/_jobs_test`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${cfg.token}`, "Content-Type": "application/json" },
+      body: JSON.stringify([testVal]),
+    });
+    const txt = await r.text();
+    report += `POST /set/_jobs_test\n  HTTP: ${r.status}\n  Body: ${txt}\n\n`;
+    // Read back
+    const r2 = await fetch(`${cfg.url}/get/_jobs_test`, { headers: { Authorization: `Bearer ${cfg.token}` } });
+    const txt2 = await r2.text();
+    report += `GET /get/_jobs_test (読み返し)\n  HTTP: ${r2.status}\n  Body: ${txt2.slice(0, 200)}\n`;
+  } catch(e) { report += `SET/GETテスト エラー: ${e.message}\n`; }
+  alert(report);
+}
+
+// 認証情報を含む共有URLを生成して他デバイスに設定を渡す
+function applySharedConfig() {
+  try {
+    const match = location.hash.match(/cfg=([A-Za-z0-9+/=]+)/);
+    if (!match) return;
+    const cfg = JSON.parse(atob(match[1]));
+    if (cfg?.url && cfg?.token) {
+      localStorage.setItem("upstash-config", JSON.stringify({ url: cfg.url.trim().replace(/\/$/, ""), token: cfg.token.trim() }));
+      history.replaceState(null, "", location.pathname);
+      setTimeout(() => toast("✅ クラウド同期設定を自動適用しました！設定で確認できます", 5000), 800);
+    }
+  } catch {}
+}
+
+async function copyShareConfigUrl() {
+  const cfg = getUpstashConfig();
+  if (!cfg) { toast("先にUpstash URLとTokenを保存してください"); return; }
+  const encoded = btoa(JSON.stringify(cfg));
+  const url = `${location.origin}/jobs/#cfg=${encoded}`;
+  try {
+    await navigator.clipboard.writeText(url);
+    toast("✅ 設定URLをコピーしました！このURLを他のデバイスで開けば自動設定されます", 6000);
+  } catch {
+    prompt("このURLをコピーして他のデバイスで開いてください（AirDropやLINEで送信）:", url);
+  }
 }
 
 function aiPost(endpoint, params) {
@@ -3081,11 +3139,16 @@ function renderSettings() {
 
           <div class="form-group mt-3" style="background:var(--surface-2);border-radius:10px;padding:14px 16px;border:1px solid var(--border)">
             <div style="font-size:13px;font-weight:700;margin-bottom:4px">☁️ クラウド同期（Upstash直接接続）</div>
-            <div style="font-size:12px;color:var(--text-3);margin-bottom:10px">UpstashのREST URLとTokenを入力すると、複数デバイスで自動同期されます。</div>
+            <div style="font-size:12px;color:var(--text-3);margin-bottom:10px">UpstashのREST URLとTokenを入力すると複数デバイスで同期できます。<strong>設定は各デバイスで1回だけ必要</strong>ですが、「設定を別デバイスに共有」を使うと簡単に全デバイスへ反映できます。</div>
+            <div id="upstash-current-url" style="font-size:11px;color:var(--text-3);margin-bottom:8px;word-break:break-all"></div>
             <input id="upstash-url-input" class="form-input" placeholder="https://xxx-xxx.upstash.io" style="margin-bottom:6px" />
-            <input id="upstash-token-input" class="form-input" placeholder="Upstash REST Token（AQxxxx...）" type="password" style="margin-bottom:8px" />
-            <button class="btn btn-primary btn-sm" onclick="saveUpstashConfig()">保存して接続テスト</button>
-            <span id="upstash-status" style="font-size:12px;margin-left:8px;color:var(--text-3)"></span>
+            <input id="upstash-token-input" class="form-input" placeholder="Token（設定済みの場合は空欄でOK）" type="password" style="margin-bottom:8px" />
+            <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:8px">
+              <button class="btn btn-primary btn-sm" onclick="saveUpstashConfig()">保存して接続テスト</button>
+              <button class="btn btn-secondary btn-sm" onclick="debugUpstash()">🔍 診断</button>
+              <span id="upstash-status" style="font-size:12px;color:var(--text-3)"></span>
+            </div>
+            <button class="btn btn-secondary btn-sm" onclick="copyShareConfigUrl()" style="width:100%;background:var(--indigo,#4f46e5);color:#fff;border-color:var(--indigo,#4f46e5)">🔗 設定を別デバイスに共有（URLワンタップで自動設定）</button>
           </div>
 
           <div class="form-group mt-3">
@@ -3143,16 +3206,21 @@ function renderSettings() {
   if (cfg?.url) {
     const urlEl = document.getElementById("upstash-url-input");
     const statusEl = document.getElementById("upstash-status");
+    const currentEl = document.getElementById("upstash-current-url");
     if (urlEl) urlEl.value = cfg.url;
     if (statusEl) statusEl.textContent = "✅ 設定済み";
+    if (currentEl) currentEl.innerHTML = `現在の接続先: <strong>${cfg.url}</strong>`;
   }
 }
 
 async function saveUpstashConfig() {
-  const url   = (document.getElementById("upstash-url-input")?.value || "").trim().replace(/\/$/, "");
-  const token = (document.getElementById("upstash-token-input")?.value || "").trim();
+  const url      = (document.getElementById("upstash-url-input")?.value || "").trim().replace(/\/$/, "");
+  const tokenIn  = (document.getElementById("upstash-token-input")?.value || "").trim();
+  const existing = getUpstashConfig();
+  const token    = tokenIn || existing?.token || "";
   const statusEl = document.getElementById("upstash-status");
-  if (!url || !token) { toast("URLとTokenを両方入力してください"); return; }
+  if (!url) { toast("URLを入力してください"); return; }
+  if (!token) { toast("Tokenを入力してください（初回のみ）"); return; }
   if (!url.startsWith("https://")) { alert("URLはhttps://で始まる必要があります。\n現在の値: " + url); return; }
   localStorage.setItem("upstash-config", JSON.stringify({ url, token }));
   if (statusEl) statusEl.textContent = "接続テスト中...";
@@ -3231,18 +3299,68 @@ function restoreFromBackup() {
 async function forcePushToServer() {
   const count = state.companies.length;
   if (!count) { toast("送るデータがありません（企業0社）"); return; }
-  if (!getUpstashConfig()) { toast("設定→クラウド同期でUpstash URLとTokenを入力してください", 5000); return; }
+  const cfg = getUpstashConfig();
+  if (!cfg) { toast("設定→クラウド同期でUpstash URLとTokenを入力してください", 5000); return; }
   toast("Upstashに送信中...", 3000);
-  const ok = await upstashSet({ companies: state.companies, schedules: state.schedules, profile: state.profile, updatedAt: Date.now() });
-  if (ok) { toast(`✅ ${count}社をクラウドに同期しました`, 5000); checkDataStatus(); }
-  else { toast("❌ 同期失敗。URLとTokenを確認してください", 5000); }
+  try {
+    const payload = { companies: state.companies, schedules: state.schedules, profile: state.profile, updatedAt: Date.now() };
+    const res = await fetch(`${cfg.url}/set/jobs-data`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${cfg.token}`, "Content-Type": "application/json" },
+      body: JSON.stringify([JSON.stringify(payload)]),
+    });
+    const txt = await res.text();
+    if (!res.ok) {
+      alert(`Upstash同期失敗 HTTP ${res.status}:\n${txt.slice(0, 300)}\n\nURL: ${cfg.url}`);
+      return;
+    }
+    let resultOk = false;
+    try { resultOk = JSON.parse(txt).result === "OK"; } catch {}
+    if (!resultOk) {
+      alert(`Upstashが予期しないレスポンスを返しました:\n${txt.slice(0, 300)}\n\n診断ボタンで詳細確認してください。`);
+      return;
+    }
+    // 書き込んだ直後にGETして本当に保存されたか確認
+    const verify = await fetch(`${cfg.url}/get/jobs-data`, { headers: { Authorization: `Bearer ${cfg.token}` } });
+    const vJson = await verify.json();
+    const stored = vJson.result ? JSON.parse(vJson.result) : null;
+    const storedCount = (stored?.companies || []).length;
+    if (storedCount === count) {
+      toast(`✅ ${count}社をクラウドに同期・確認完了`, 5000);
+    } else if (storedCount > 0) {
+      toast(`✅ クラウドに${storedCount}社が保存されました`, 5000);
+    } else {
+      alert(`⚠️ SETは成功しましたが読み返しでデータが見つかりませんでした。\n\n送信先URL: ${cfg.url}\n\n「設定を別デバイスに共有」機能で正しいURLを確認してください。`);
+    }
+    checkDataStatus();
+  } catch(e) {
+    alert(`ネットワークエラー:\n${e.name}: ${e.message}`);
+  }
 }
 
 async function forcePullFromServer() {
-  if (!getUpstashConfig()) { toast("設定→クラウド同期でUpstash URLとTokenを入力してください", 5000); return; }
+  const cfg = getUpstashConfig();
+  if (!cfg) { toast("設定→クラウド同期でUpstash URLとTokenを入力してください", 5000); return; }
   try {
-    const data = await upstashGet();
-    if (!data || !(data.companies || []).length) { toast("クラウドにデータがありません"); return; }
+    const res = await fetch(`${cfg.url}/get/jobs-data`, { headers: { Authorization: `Bearer ${cfg.token}` } });
+    if (!res.ok) {
+      alert(`Upstash接続失敗 HTTP ${res.status}\n\nURLとTokenが正しいか確認してください。\n接続先: ${cfg.url}`);
+      return;
+    }
+    const json = await res.json();
+    if (!json.result) {
+      alert(`クラウドにデータがありません。\n\n接続先URL: ${cfg.url}\n\n⚠️ 送信側デバイスのURLと一致しているか確認してください。\n「設定を別デバイスに共有」機能を使うと確実です。\n\n送信側で「このデバイスをクラウドへ送る」を押してから再度お試しください。`);
+      return;
+    }
+    let data;
+    try { data = JSON.parse(json.result); } catch(e) {
+      alert(`クラウドデータの解析に失敗:\n${e.message}\n\n生データ: ${String(json.result).slice(0, 200)}`);
+      return;
+    }
+    if (!(data.companies || []).length) {
+      toast("クラウドにデータがありません（企業0社）");
+      return;
+    }
     const esCount = data.companies.reduce((n, c) => n + (c.es || []).length, 0);
     const ivCount  = data.companies.reduce((n, c) => n + (c.interviews || []).length, 0);
     if (!confirm(`クラウドのデータで上書きします。\n\n企業: ${data.companies.length}社・ES: ${esCount}件・面接: ${ivCount}件\n\nよろしいですか？`)) return;
@@ -3254,7 +3372,7 @@ async function forcePullFromServer() {
     checkDataStatus();
     handleRoute();
   } catch (e) {
-    toast("クラウドからの取得に失敗しました: " + e.message, 5000);
+    alert(`ネットワークエラー:\n${e.name}: ${e.message}`);
   }
 }
 
@@ -3401,6 +3519,7 @@ async function resetData() {
 
 /* ===== Init ===== */
 async function init() {
+  applySharedConfig(); // 共有URLからUpstash設定を自動適用
   // AI result panel collapse via event delegation
   document.addEventListener("click", e => {
     if (e.target.closest("button, a[href], input, textarea, select")) return;
