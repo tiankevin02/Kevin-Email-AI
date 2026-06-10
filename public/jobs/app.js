@@ -278,8 +278,8 @@ async function _aiChat(systemPrompt, userContent) {
   const errors = [];
 
   if (keys.geminiApiKey) {
-    // モデルを順番に試す（429クォータ超過でも次を試す。401/403認証エラーのみ即break）
-    const models = ["gemini-2.5-flash", "gemini-2.5-flash-preview-05-20", "gemini-3.1-flash-lite", "gemini-2.0-flash-lite", "gemini-1.5-flash"];
+    // モデルを順番に試す（429/404でも次を試す。401/403認証エラーのみ即break）
+    const models = ["gemini-2.5-flash", "gemini-2.5-flash-preview-05-20", "gemini-2.5-flash-8b", "gemini-3.1-flash-lite", "gemini-2.0-flash-lite", "gemini-2.0-flash", "gemini-1.5-flash"];
     for (const model of models) {
       try {
         const res = await fetch(
@@ -289,18 +289,21 @@ async function _aiChat(systemPrompt, userContent) {
               contents: [{ role: "user", parts: [{ text: userContent }] }],
               generationConfig: { temperature: 0.7, maxOutputTokens: 4096 } }) }
         );
-        const body = await res.json();
+        let body = {};
+        try { body = await res.json(); } catch { /* JSONでない場合はスキップ */ }
         if (res.ok) {
           const t = body.candidates?.[0]?.content?.parts?.[0]?.text?.trim();
           if (t) return t;
         } else {
           const msg = (body.error?.message || `HTTP ${res.status}`).slice(0, 120);
           errors.push(`Gemini(${model}): ${msg}`);
-          // 401/403=認証エラー → キー自体が無効なので全モデル諦める
-          if (res.status === 401 || res.status === 403) break;
-          // 404=モデル非対応 / 429=クォータ → 次のモデルを試す
+          if (res.status === 401 || res.status === 403) break; // 認証エラーのみ諦める
+          // 404/429 → 次のモデルへ続行
         }
-      } catch(e) { errors.push(`Gemini(${model}): ${e.message}`); break; }
+      } catch(e) {
+        errors.push(`Gemini(${model}): ${e.message}`);
+        // ネットワークエラーでも次のモデルを試す（breakしない）
+      }
     }
   }
 
