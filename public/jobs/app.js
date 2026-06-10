@@ -275,20 +275,31 @@ function _buildProfileCtx() {
 async function _aiChat(systemPrompt, userContent) {
   const keys = getStoredAiKeys();
   const messages = [{ role: "system", content: systemPrompt }, { role: "user", content: userContent }];
+  const errors = [];
 
   if (keys.geminiApiKey) {
-    try {
-      const model = "gemini-2.0-flash";
-      const res = await fetch(
-        `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${keys.geminiApiKey}`,
-        { method: "POST", headers: { "content-type": "application/json" },
-          body: JSON.stringify({ systemInstruction: { parts: [{ text: systemPrompt }] },
-            contents: [{ role: "user", parts: [{ text: userContent }] }],
-            generationConfig: { temperature: 0.7, maxOutputTokens: 4096 } }) }
-      );
-      const body = await res.json();
-      if (res.ok) { const t = body.candidates?.[0]?.content?.parts?.[0]?.text?.trim(); if (t) return t; }
-    } catch {}
+    const models = ["gemini-2.0-flash", "gemini-1.5-flash", "gemini-1.5-flash-8b", "gemini-2.5-flash-preview-05-20"];
+    for (const model of models) {
+      try {
+        const res = await fetch(
+          `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${keys.geminiApiKey}`,
+          { method: "POST", headers: { "content-type": "application/json" },
+            body: JSON.stringify({ systemInstruction: { parts: [{ text: systemPrompt }] },
+              contents: [{ role: "user", parts: [{ text: userContent }] }],
+              generationConfig: { temperature: 0.7, maxOutputTokens: 4096 } }) }
+        );
+        const body = await res.json();
+        if (res.ok) {
+          const t = body.candidates?.[0]?.content?.parts?.[0]?.text?.trim();
+          if (t) return t;
+        } else {
+          const msg = body.error?.message || body.error?.status || `HTTP ${res.status}`;
+          errors.push(`Gemini(${model}): ${msg}`);
+          // 404 = モデルが存在しない → 次のモデルを試す。それ以外 → このキーは使えない
+          if (res.status !== 404) break;
+        }
+      } catch(e) { errors.push(`Gemini(${model}): ${e.message}`); break; }
+    }
   }
 
   if (keys.openAIKey) {
@@ -300,7 +311,8 @@ async function _aiChat(systemPrompt, userContent) {
       });
       const body = await res.json();
       if (res.ok) { const t = body.choices?.[0]?.message?.content?.trim(); if (t) return t; }
-    } catch {}
+      else { errors.push(`OpenAI: ${body.error?.message || `HTTP ${res.status}`}`); }
+    } catch(e) { errors.push(`OpenAI: ${e.message}`); }
   }
 
   if (keys.grokApiKey) {
@@ -312,10 +324,15 @@ async function _aiChat(systemPrompt, userContent) {
       });
       const body = await res.json();
       if (res.ok) { const t = body.choices?.[0]?.message?.content?.trim(); if (t) return t; }
-    } catch {}
+      else { errors.push(`Grok: ${body.error?.message || `HTTP ${res.status}`}`); }
+    } catch(e) { errors.push(`Grok: ${e.message}`); }
   }
 
-  throw new Error("AIサービスが設定されていません。設定からGemini・OpenAI・GrokのAPIキーを入力してください。\n※ AnthropicはCORS制限によりブラウザから直接利用できません。");
+  const hasKey = keys.geminiApiKey || keys.openAIKey || keys.grokApiKey;
+  if (!hasKey) {
+    throw new Error("APIキーが設定されていません。設定からGemini・OpenAI・GrokのAPIキーを入力してください。\n（AnthropicはCORS制限によりブラウザから直接利用できません）");
+  }
+  throw new Error(`AI呼び出しに失敗しました:\n${errors.join("\n") || "不明なエラー"}\n\nAPIキーが正しいか、クォータが残っているか確認してください。`);
 }
 
 async function _aiCall(action, p) {
