@@ -278,7 +278,8 @@ async function _aiChat(systemPrompt, userContent) {
   const errors = [];
 
   if (keys.geminiApiKey) {
-    const models = ["gemini-2.0-flash", "gemini-1.5-flash", "gemini-1.5-flash-8b", "gemini-2.5-flash-preview-05-20"];
+    // モデルを順番に試す（429クォータ超過でも次を試す。401/403認証エラーのみ即break）
+    const models = ["gemini-1.5-flash", "gemini-1.5-flash-8b", "gemini-2.0-flash", "gemini-2.5-flash-preview-05-20"];
     for (const model of models) {
       try {
         const res = await fetch(
@@ -293,10 +294,11 @@ async function _aiChat(systemPrompt, userContent) {
           const t = body.candidates?.[0]?.content?.parts?.[0]?.text?.trim();
           if (t) return t;
         } else {
-          const msg = body.error?.message || body.error?.status || `HTTP ${res.status}`;
+          const msg = (body.error?.message || `HTTP ${res.status}`).slice(0, 120);
           errors.push(`Gemini(${model}): ${msg}`);
-          // 404 = モデルが存在しない → 次のモデルを試す。それ以外 → このキーは使えない
-          if (res.status !== 404) break;
+          // 401/403=認証エラー → キー自体が無効なので全モデル諦める
+          if (res.status === 401 || res.status === 403) break;
+          // 404=モデル非対応 / 429=クォータ → 次のモデルを試す
         }
       } catch(e) { errors.push(`Gemini(${model}): ${e.message}`); break; }
     }
@@ -330,9 +332,14 @@ async function _aiChat(systemPrompt, userContent) {
 
   const hasKey = keys.geminiApiKey || keys.openAIKey || keys.grokApiKey;
   if (!hasKey) {
-    throw new Error("APIキーが設定されていません。設定からGemini・OpenAI・GrokのAPIキーを入力してください。\n（AnthropicはCORS制限によりブラウザから直接利用できません）");
+    throw new Error("APIキーが設定されていません。\n設定からGemini・OpenAI・GrokのAPIキーを入力してください。");
   }
-  throw new Error(`AI呼び出しに失敗しました:\n${errors.join("\n") || "不明なエラー"}\n\nAPIキーが正しいか、クォータが残っているか確認してください。`);
+  // クォータ超過かどうかを判定してわかりやすいメッセージに
+  const isQuota = errors.some(e => e.includes("quota") || e.includes("429"));
+  if (isQuota) {
+    throw new Error("APIのクォータ（無料上限）に達しています。\n\n解決策:\n① しばらく待って再試行する（1分〜1時間）\n② Google AI Studioで新しいAPIキーを取得する\n③ OpenAIやGrokなど別プロバイダのキーを設定する\n\n詳細: " + errors.slice(0, 2).join(" / "));
+  }
+  throw new Error(`AI呼び出しに失敗しました。\n${errors.slice(0, 3).join("\n") || "不明なエラー"}\n\nAPIキーが正しいか確認してください。`);
 }
 
 async function _aiCall(action, p) {
