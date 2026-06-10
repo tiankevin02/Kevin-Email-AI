@@ -259,12 +259,187 @@ async function copyShareConfigUrl() {
   }
 }
 
-function aiPost(endpoint, params) {
+/* ===== Client-side AI (Vercelサーバーレス関数が壊れているためブラウザ直接呼び出し) ===== */
+
+function _buildProfileCtx() {
+  const p = state.profile || {};
+  const parts = [];
+  if (p.gakuchika)  parts.push(`【ガクチカ】\n${p.gakuchika}`);
+  if (p.selfPr)     parts.push(`【自己PR】\n${p.selfPr}`);
+  if (p.motivation) parts.push(`【志望動機の軸】\n${p.motivation}`);
+  if (p.skills)     parts.push(`【スキル・資格】\n${p.skills}`);
+  if (p.other)      parts.push(`【その他】\n${p.other}`);
+  return parts.length ? "\n\n---\n【応募者のプロフィール情報】\n" + parts.join("\n\n") : "";
+}
+
+async function _aiChat(systemPrompt, userContent) {
   const keys = getStoredAiKeys();
-  return fetchJson(endpoint, {
-    method: "POST",
-    body: JSON.stringify({ ...params, userProfile: getProfilePayload(), _clientKeys: keys }),
-  });
+  const messages = [{ role: "system", content: systemPrompt }, { role: "user", content: userContent }];
+
+  if (keys.geminiApiKey) {
+    try {
+      const model = "gemini-2.0-flash";
+      const res = await fetch(
+        `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${keys.geminiApiKey}`,
+        { method: "POST", headers: { "content-type": "application/json" },
+          body: JSON.stringify({ systemInstruction: { parts: [{ text: systemPrompt }] },
+            contents: [{ role: "user", parts: [{ text: userContent }] }],
+            generationConfig: { temperature: 0.7, maxOutputTokens: 4096 } }) }
+      );
+      const body = await res.json();
+      if (res.ok) { const t = body.candidates?.[0]?.content?.parts?.[0]?.text?.trim(); if (t) return t; }
+    } catch {}
+  }
+
+  if (keys.openAIKey) {
+    try {
+      const res = await fetch("https://api.openai.com/v1/chat/completions", {
+        method: "POST",
+        headers: { authorization: `Bearer ${keys.openAIKey}`, "content-type": "application/json" },
+        body: JSON.stringify({ model: "gpt-4o-mini", messages, temperature: 0.7, max_tokens: 4096 }),
+      });
+      const body = await res.json();
+      if (res.ok) { const t = body.choices?.[0]?.message?.content?.trim(); if (t) return t; }
+    } catch {}
+  }
+
+  if (keys.grokApiKey) {
+    try {
+      const res = await fetch("https://api.x.ai/v1/chat/completions", {
+        method: "POST",
+        headers: { authorization: `Bearer ${keys.grokApiKey}`, "content-type": "application/json" },
+        body: JSON.stringify({ model: "grok-3-mini", messages, temperature: 0.7, max_tokens: 4096 }),
+      });
+      const body = await res.json();
+      if (res.ok) { const t = body.choices?.[0]?.message?.content?.trim(); if (t) return t; }
+    } catch {}
+  }
+
+  throw new Error("AIサービスが設定されていません。設定からGemini・OpenAI・GrokのAPIキーを入力してください。\n※ AnthropicはCORS制限によりブラウザから直接利用できません。");
+}
+
+async function _aiCall(action, p) {
+  const pc = _buildProfileCtx();
+  switch (action) {
+    case "es-review": {
+      const charNote = p.maxChars ? `（${p.maxChars}字以内で記述すること）` : "（改善版の回答例を提示）";
+      const sys = `あなたは${p.companyName}の人事採用担当です。エントリーシートの書類選考を行います。\n\nまず${p.companyName}の企業理念・価値観・求める人材像をあなたの知識で整理し、そのペルソナに基づいてESを評価・添削してください。\n\n【評価観点】\n1. 企業との適合性（カルチャーフィット）\n2. 自己分析の深さと具体性\n3. 論理構成（結論→根拠→具体例）\n4. 表現力・語彙の適切さ\n5. 独自性・インパクト\n\n【出力形式（マークダウン）】\n## ${p.companyName}について（求める人材像）\n（企業の特徴と求める人物像を2〜3行で）\n\n## 評価\n**良かった点**\n- （2〜3点、具体的に）\n\n**改善が必要な点**\n- （2〜3点、具体的に）\n\n## 添削後の例文\n${charNote}\n\n## 総評\n（100字程度の総合コメント）`;
+      return { review: await _aiChat(sys, `【設問】${p.question}\n\n【回答】\n${p.answer}${pc}`) };
+    }
+    case "webtest": {
+      const sys = "あなたは就職活動の専門家です。企業のWEBテスト（適性検査）に関する詳しい情報を提供します。";
+      const user = `${p.companyName}のWEBテストについてマークダウンで教えてください：\n\n## ${p.companyName}のWEBテスト情報\n\n### テスト種類\n### 出題科目・内容\n### 受験形式\n### 難易度・特徴\n### 対策方法\n### 注意事項\n\n※不確かな情報は「要確認」と記載してください。`;
+      return { info: await _aiChat(sys, user) };
+    }
+    case "interview-tips": {
+      const sys = "あなたは就職活動支援の専門家です。企業の面接情報と対策を詳しく提供します。";
+      const user = `${p.companyName}の${p.interviewType || "面接"}についてマークダウンでまとめてください：\n\n## ${p.companyName}の面接情報\n\n### 面接の形式・雰囲気\n### よく聞かれる質問（10問程度）\n### 企業が重視するポイント\n### 逆質問のコツ\n### 対策のポイント\n\n※推測を含みます。`;
+      return { tips: await _aiChat(sys, user) };
+    }
+    case "interview-feedback": {
+      const sys = "あなたは就職活動のプロコーチです。面接体験を分析し、具体的なフィードバックを提供します。";
+      const user = `以下の面接体験についてマークダウンでフィードバックしてください。\n\n【企業】${p.companyName || "不明"}　【種別】${p.interviewType || "面接"}\n【聞かれた質問】${p.questionsAsked || "（記載なし）"}\n【体験・感想】${p.experience}\n\n## 面接体験のフィードバック\n### 良かった点\n### 改善できる点\n### 次の面接に向けたアドバイス\n### 主要な質問への回答改善案\n### 総評（100字程度）`;
+      return { feedback: await _aiChat(sys, user) };
+    }
+    case "es-advice": {
+      const sl = p.maxChars ? `参考例文（${p.maxChars}字程度）` : "参考例文（100字程度）";
+      const sn = p.maxChars ? `（${p.maxChars}字程度で全体の流れを示すこと）` : "（書き出しの例）";
+      const sys = `あなたは${p.companyName}の人事採用担当です。ESの設問に対するアドバイスを提供します。プロフィールがある場合は踏まえた具体的アドバイスをしてください。`;
+      const user = `【企業】${p.companyName}\n【設問】${p.question}${p.maxChars ? `\n【文字数制限】${p.maxChars}字以内` : ""}${pc}\n\n## 回答のアプローチ\n## 構成の提案\n1. （結論）\n2. （根拠・エピソード）\n3. （学び・成長）\n4. （企業への応用）\n## 避けるべき表現・内容\n## ${sl}\n${sn}`;
+      return { advice: await _aiChat(sys, user) };
+    }
+    case "es-strategy": {
+      const qs = (p.esEntries || []).map(e => `- ${e.question}`).join("\n") || "（設問未登録）";
+      const sys = "あなたは就職活動の専門家です。企業のES対策に関する詳しい情報を提供します。プロフィールがある場合は個別のアドバイスをしてください。";
+      const user = `${p.companyName}のES対策についてマークダウンで教えてください：\n\n【登録されている設問】\n${qs}${pc}\n\n## ${p.companyName}のES対策\n### 企業の求める人物像\n### よく出るES設問\n### 文章を書くときのポイント\n### 通過率を上げるコツ\n### 注意事項\n\n※不確かな情報は「要確認」と記載してください。`;
+      return { strategy: await _aiChat(sys, user) };
+    }
+    case "iv-review": {
+      const sys = `あなたは${p.companyName || "企業"}の面接官です。面接の回答を添削します。${pc ? "応募者のプロフィールを参考に具体的なフィードバックをしてください。" : ""}`;
+      const user = `【企業】${p.companyName || "不明"}　【面接種別】${p.interviewType || "面接"}\n【設問】${p.question}\n【回答】${p.answer}${pc}\n\n## 評価\n**良かった点**\n**改善が必要な点**\n## 改善案\n## 総評（80字程度）`;
+      return { review: await _aiChat(sys, user) };
+    }
+    case "iv-advice": {
+      const sys = "あなたは就職活動の専門家です。面接の設問に対する回答アドバイスを提供します。プロフィールがある場合は実際の経験を活かした具体的なアドバイスをしてください。";
+      const user = `【企業】${p.companyName || "不明"}　【面接種別】${p.interviewType || "面接"}\n【設問】${p.question}${pc}\n\n## この設問の意図\n## 回答の構成\n1. （結論・主張）\n2. （根拠・エピソード）\n3. （学び・成果）\n4. （入社後への展開）\n## 効果的なポイント\n## 回答例（120字程度）`;
+      return { advice: await _aiChat(sys, user) };
+    }
+    case "iv-strategy": {
+      const sys = "あなたは就職活動支援の専門家です。企業の面接情報と対策を詳しく提供します。プロフィールがある場合は個別の対策を含めてください。";
+      const user = `${p.companyName}の面接対策についてマークダウンでまとめてください：${pc}\n\n## ${p.companyName}の面接対策情報\n### 面接の形式・雰囲気\n### よく聞かれる質問（10問程度）\n### 企業が重視するポイント\n### 逆質問のコツ\n### 対策のポイント\n\n※推測を含みます。`;
+      return { strategy: await _aiChat(sys, user) };
+    }
+    case "generate-email": {
+      const sp = p.selfPr || state.profile?.selfPr || "";
+      const sys = "あなたは就職活動の文章作成のプロです。採用担当者に好印象を与える礼儀正しく熱意が伝わるメールを作成します。";
+      const user = `以下の情報をもとに${p.emailType || "応募"}メールを作成してください。\n\n【企業名】${p.companyName}\n【業界】${p.industry || "不明"}\n【選考タイプ】${p.selectionType || "インターン"}\n【メール種別】${p.emailType || "応募"}メール\n【自己PR】${sp || "（未記載）"}${pc}\n\n件名も含めた完成形のメールを作成してください。`;
+      return { email: await _aiChat(sys, user) };
+    }
+    case "scan-job": {
+      const content = p.jobText || (p.jobUrl ? `URL: ${p.jobUrl}\n（ブラウザからは直接アクセスできないためURLの情報とAIの知識で分析します）` : "");
+      const sys = "あなたは就職活動の情報分析の専門家です。求人情報から重要な情報を正確に抽出します。プロフィールがある場合は相性・アピールポイントも分析してください。";
+      const user = `以下の求人情報を分析してください。\n企業名: ${p.companyName || "不明"}\n内容: ${content.slice(0, 2500)}${pc}\n\n## 求人情報分析\n### 企業情報\n### 求める人物像\n### 仕事内容・配属\n### 選考プロセス\n### アピールすべきポイント`;
+      return { result: await _aiChat(sys, user) };
+    }
+    case "optimize-selfpr": {
+      const bp = p.basePr || state.profile?.selfPr || "";
+      const esInfo = (p.esEntries || []).filter(e => e.answer).map(e => `Q: ${e.question}\nA: ${e.answer}`).join("\n\n");
+      const sys = `あなたは${p.companyName}の人事採用担当AIです。${p.companyName}の企業理念・価値観をもとに応募者の自己PRを最適化します。`;
+      const user = `【企業】${p.companyName}（${p.industry || "業界不明"}）【選考タイプ】${p.selectionType || "インターン"}\n\n【ベース自己PR】\n${bp}\n\n${esInfo ? `【ESの回答（参考）】\n${esInfo}` : ""}${pc}\n\n## 最適化された自己PR（そのまま使える版）\n## 改善ポイント`;
+      return { optimized: await _aiChat(sys, user) };
+    }
+    case "gap-analysis": {
+      const esInfo = (p.esEntries || []).filter(e => e.question).map(e => `Q: ${e.question}\nA: ${e.answer || "（未回答）"}`).join("\n\n");
+      const sp = p.selfPr || state.profile?.selfPr || "";
+      const sys = `あなたは${p.companyName}の人事採用担当AIです。企業が求めるものと応募者が持っているものを比較しギャップを明確に分析します。`;
+      const user = `【企業】${p.companyName}（${p.industry || ""}）【選考タイプ】${p.selectionType || "インターン"}\n\n【応募者の現状】\n自己PR: ${sp || "（未記載）"}\nガクチカ: ${state.profile?.gakuchika || "（未記載）"}\n志望動機の軸: ${state.profile?.motivation || "（未記載）"}\nスキル・資格: ${state.profile?.skills || "（未記載）"}\nメモ・志望動機: ${p.notes || "（未記載）"}\nESの内容:\n${esInfo || "（未記載）"}\n\n## ギャップ分析\n### 企業が求めるもの\n### あなたが持っているもの\n### ギャップ（補強が必要な点）\n### 今すぐできる対策\n### 面接・ESで強調すべきポイント`;
+      return { analysis: await _aiChat(sys, user) };
+    }
+    case "mock-interview-start": {
+      const sys = `あなたは${p.companyName}の面接官です。${p.companyName}の企業理念と求める人物像を踏まえて面接を行います。${pc ? "応募者のプロフィールを参考に質問してください。" : ""}`;
+      const user = `${p.companyName}の${p.interviewType || "一次面接"}として最初の質問を1つだけ考えてください。${pc}\n\n出力形式（JSON）:\n{"question":"面接の最初の質問（自己紹介を含む自然な導入）","context":"この面接の評価基準・重視するポイント（100字以内）"}\n\nJSONのみを返してください。`;
+      const raw = await _aiChat(sys, user);
+      let question = "自己紹介をお願いします。", context = "";
+      try { const d = JSON.parse(raw.replace(/```json\n?|\n?```/g, "").trim()); question = d.question || question; context = d.context || ""; } catch {}
+      return { question, context };
+    }
+    case "mock-interview-next": {
+      const sys = `あなたは${p.companyName}の面接官です。評価基準: ${p.context || "企業理念に基づく評価"}${pc ? "\n" + pc : ""}`;
+      const histStr = (p.history || []).map(h => `Q: ${h.q}\nA: ${h.a}`).join("\n\n");
+      const user = `面接の流れ:\n${histStr ? histStr + "\n\n" : ""}Q: ${p.question}\nA: ${p.answer}\n\n上記の回答に対して：\n1. 簡潔なフィードバック（100字以内）\n2. 次の質問\n\n出力形式（JSON）:\n{"feedback":"フィードバック（100字以内）","nextQuestion":"次の質問"}\n\nJSONのみを返してください。`;
+      const raw = await _aiChat(sys, user);
+      let feedback = "", nextQuestion = "他に自己PRはありますか？";
+      try { const d = JSON.parse(raw.replace(/```json\n?|\n?```/g, "").trim()); feedback = d.feedback || ""; nextQuestion = d.nextQuestion || nextQuestion; } catch {}
+      return { feedback, nextQuestion };
+    }
+    case "analysis": {
+      const byStatus = {};
+      (p.companies || []).forEach(c => { byStatus[c.status] = (byStatus[c.status] || 0) + 1; });
+      const today = new Date().toISOString().slice(0, 10);
+      const upcoming = (p.schedules || []).filter(s => s.date >= today).length;
+      const sys = "あなたは就職活動のプロコーチです。就活データを分析し具体的なアドバイスを提供します。";
+      const user = `以下の就活データを分析してマークダウンでフィードバックしてください。\n\n【登録企業数】${(p.companies || []).length}社\n【ステータス別】${JSON.stringify(byStatus)}\n【今後の予定】${upcoming}件\n【企業一覧】${(p.companies || []).map(c => `${c.name}(${c.status})`).join("、")}\n\n## 就活進捗分析\n### 現在の状況\n### 強み・うまくいっている点\n### 課題・改善が必要な点\n### 今週やるべきこと（優先順位付き）\n### 長期的な戦略アドバイス`;
+      return { analysis: await _aiChat(sys, user) };
+    }
+    case "archive-search": {
+      const et = (p.entries || []).map((e, i) =>
+        `[${i}] 企業:${e.companyName} 種別:${e.type === "es" ? "ES" : "面接Q&A"}\n設問:${e.question}\n回答:${(e.answer || "（未記入）").slice(0, 300)}`
+      ).join("\n\n");
+      const sys = `あなたは就職活動のアシスタントです。検索クエリに対して関連性の高いES・面接Q&Aを見つけてください。\n必ずJSON配列のみを返してください：\n[{"index":数字,"relevance":"high"|"medium","reason":"関連する理由（20字以内）"},...]${pc}`;
+      const result = await _aiChat(sys, `【検索クエリ】${p.query}\n\n【登録データ】\n${et}`);
+      let ranked = [];
+      try { const m = result.match(/\[[\s\S]*\]/); ranked = m ? JSON.parse(m[0]) : []; } catch {}
+      return { results: ranked };
+    }
+    default:
+      throw new Error(`Unknown AI action: ${action}`);
+  }
+}
+
+// サーバーを完全に迂回してブラウザから直接AIを呼ぶ
+function aiPost(endpoint, params) {
+  const action = endpoint.split("/").pop();
+  return _aiCall(action, params);
 }
 
 /* データを安全に読む */
