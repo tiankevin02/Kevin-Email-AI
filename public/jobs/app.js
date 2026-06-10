@@ -279,7 +279,7 @@ async function _aiChat(systemPrompt, userContent) {
 
   if (keys.geminiApiKey) {
     // モデルを順番に試す（429クォータ超過でも次を試す。401/403認証エラーのみ即break）
-    const models = ["gemini-1.5-flash", "gemini-1.5-flash-8b", "gemini-2.0-flash", "gemini-2.5-flash-preview-05-20"];
+    const models = ["gemini-2.5-flash", "gemini-2.5-flash-preview-05-20", "gemini-3.1-flash-lite", "gemini-2.0-flash-lite", "gemini-1.5-flash"];
     for (const model of models) {
       try {
         const res = await fetch(
