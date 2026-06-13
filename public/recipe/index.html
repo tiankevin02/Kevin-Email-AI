@@ -1,0 +1,219 @@
+<!doctype html>
+<html lang="ja">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="theme-color" content="#f5f0eb" />
+    <title>今日のレシピ ✦</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@300;400;500&family=Playfair+Display:ital@0;1&display=swap" rel="stylesheet" />
+    <link rel="stylesheet" href="/recipe/style.css" />
+  </head>
+  <body>
+    <div class="bg-orbs" aria-hidden="true">
+      <div class="orb orb-1"></div>
+      <div class="orb orb-2"></div>
+      <div class="orb orb-3"></div>
+    </div>
+
+    <main class="app">
+      <!-- Hero -->
+      <header class="hero">
+        <div class="hero-inner">
+          <span class="hero-label">Today's Kitchen</span>
+          <h1 class="hero-title">今日のレシピ<span class="title-accent">✦</span></h1>
+          <p class="hero-sub">気分・天気・体力に合わせて、あなただけの一皿を。</p>
+        </div>
+      </header>
+
+      <!-- Form -->
+      <section class="form-section" id="formSection">
+        <div class="form-card">
+
+          <!-- Mood -->
+          <div class="field-group">
+            <label class="field-label">
+              <span class="label-icon">✦</span> 今の気分は？
+            </label>
+            <div class="chip-grid" id="moodGrid">
+              <button class="chip" data-group="mood" data-value="happy" aria-pressed="false">
+                <span class="chip-icon">☀️</span><span class="chip-text">ハッピー</span>
+              </button>
+              <button class="chip" data-group="mood" data-value="tired" aria-pressed="false">
+                <span class="chip-icon">🌙</span><span class="chip-text">疲れた</span>
+              </button>
+              <button class="chip" data-group="mood" data-value="stressed" aria-pressed="false">
+                <span class="chip-icon">🌀</span><span class="chip-text">ストレス</span>
+              </button>
+              <button class="chip" data-group="mood" data-value="relaxed" aria-pressed="false">
+                <span class="chip-icon">🌿</span><span class="chip-text">のんびり</span>
+              </button>
+              <button class="chip" data-group="mood" data-value="excited" aria-pressed="false">
+                <span class="chip-icon">⚡</span><span class="chip-text">テンション高め</span>
+              </button>
+              <button class="chip" data-group="mood" data-value="romantic" aria-pressed="false">
+                <span class="chip-icon">🌸</span><span class="chip-text">ロマンチック</span>
+              </button>
+            </div>
+          </div>
+
+          <!-- Weather -->
+          <div class="field-group">
+            <label class="field-label">
+              <span class="label-icon">✦</span> 今日の天気は？
+            </label>
+            <div class="chip-grid" id="weatherGrid">
+              <button class="chip" data-group="weather" data-value="sunny" aria-pressed="false">
+                <span class="chip-icon">🌤</span><span class="chip-text">晴れ</span>
+              </button>
+              <button class="chip" data-group="weather" data-value="cloudy" aria-pressed="false">
+                <span class="chip-icon">☁️</span><span class="chip-text">曇り</span>
+              </button>
+              <button class="chip" data-group="weather" data-value="rainy" aria-pressed="false">
+                <span class="chip-icon">🌧</span><span class="chip-text">雨</span>
+              </button>
+              <button class="chip" data-group="weather" data-value="snowy" aria-pressed="false">
+                <span class="chip-icon">❄️</span><span class="chip-text">雪</span>
+              </button>
+              <button class="chip" data-group="weather" data-value="hot" aria-pressed="false">
+                <span class="chip-icon">🔥</span><span class="chip-text">猛暑</span>
+              </button>
+              <button class="chip" data-group="weather" data-value="cold" aria-pressed="false">
+                <span class="chip-icon">🧊</span><span class="chip-text">寒い</span>
+              </button>
+            </div>
+          </div>
+
+          <!-- Exercise -->
+          <div class="field-group">
+            <label class="field-label">
+              <span class="label-icon">✦</span> 今日の運動量は？
+            </label>
+            <div class="chip-grid" id="exerciseGrid">
+              <button class="chip" data-group="exercise" data-value="none" aria-pressed="false">
+                <span class="chip-icon">🛋</span><span class="chip-text">ゼロ</span>
+              </button>
+              <button class="chip" data-group="exercise" data-value="light" aria-pressed="false">
+                <span class="chip-icon">🚶</span><span class="chip-text">軽め</span>
+              </button>
+              <button class="chip" data-group="exercise" data-value="moderate" aria-pressed="false">
+                <span class="chip-icon">🚴</span><span class="chip-text">ほどほど</span>
+              </button>
+              <button class="chip" data-group="exercise" data-value="intense" aria-pressed="false">
+                <span class="chip-icon">🏋️</span><span class="chip-text">がっつり</span>
+              </button>
+            </div>
+          </div>
+
+          <!-- Cooking Time -->
+          <div class="field-group">
+            <label class="field-label">
+              <span class="label-icon">✦</span> 料理にかけられる時間は？
+            </label>
+            <div class="chip-grid" id="timeGrid">
+              <button class="chip" data-group="time" data-value="5min" aria-pressed="false">
+                <span class="chip-icon">⚡</span><span class="chip-text">5分以内</span>
+              </button>
+              <button class="chip" data-group="time" data-value="15min" aria-pressed="false">
+                <span class="chip-icon">🕐</span><span class="chip-text">15分</span>
+              </button>
+              <button class="chip" data-group="time" data-value="30min" aria-pressed="false">
+                <span class="chip-icon">🍳</span><span class="chip-text">30分</span>
+              </button>
+              <button class="chip" data-group="time" data-value="60min" aria-pressed="false">
+                <span class="chip-icon">👨‍🍳</span><span class="chip-text">じっくり1時間+</span>
+              </button>
+            </div>
+          </div>
+
+          <!-- Ingredients -->
+          <div class="field-group">
+            <label class="field-label" for="ingredientsInput">
+              <span class="label-icon">✦</span> 使いたい食材があれば
+              <span class="label-hint">（なくてもOK — 買い物も含めて提案します）</span>
+            </label>
+            <div class="tag-input-wrap">
+              <div class="tag-input-inner" id="tagContainer">
+                <input
+                  type="text"
+                  id="ingredientsInput"
+                  class="tag-input"
+                  placeholder="例: 鶏肉、にんにく… Enter で追加"
+                  autocomplete="off"
+                />
+              </div>
+            </div>
+          </div>
+
+          <!-- Alcohol Toggle -->
+          <div class="field-group">
+            <label class="field-label">
+              <span class="label-icon">✦</span> お酒気分？
+            </label>
+            <div class="toggle-row">
+              <button class="toggle-btn" id="alcoholToggle" aria-pressed="false">
+                <span class="toggle-icon">🍷</span>
+                <span class="toggle-text">お酒も一緒におすすめして</span>
+                <span class="toggle-indicator"></span>
+              </button>
+            </div>
+          </div>
+
+          <!-- Alcohol Stock (shown when toggle is on) -->
+          <div class="field-group alcohol-stock hidden" id="alcoholStockGroup">
+            <label class="field-label" for="alcoholInput">
+              <span class="label-icon">✦</span> 手持ちのお酒があれば
+              <span class="label-hint">（相性を教えます）</span>
+            </label>
+            <div class="tag-input-wrap">
+              <div class="tag-input-inner" id="alcoholTagContainer">
+                <input
+                  type="text"
+                  id="alcoholInput"
+                  class="tag-input"
+                  placeholder="例: ビール、赤ワイン、日本酒… Enter で追加"
+                  autocomplete="off"
+                />
+              </div>
+            </div>
+          </div>
+
+          <!-- Submit -->
+          <div class="submit-wrap">
+            <button class="submit-btn" id="submitBtn" disabled>
+              <span class="submit-icon">✦</span>
+              <span>レシピをみつける</span>
+            </button>
+          </div>
+        </div>
+      </section>
+
+      <!-- Loading -->
+      <section class="loading-section hidden" id="loadingSection" aria-live="polite">
+        <div class="loading-inner">
+          <div class="loading-anim">
+            <span class="dot"></span><span class="dot"></span><span class="dot"></span>
+          </div>
+          <p class="loading-text" id="loadingText">あなたにぴったりのレシピを考えています…</p>
+        </div>
+      </section>
+
+      <!-- Result -->
+      <section class="result-section hidden" id="resultSection" aria-live="polite">
+        <div class="result-inner" id="resultInner"></div>
+        <div class="result-actions">
+          <button class="reset-btn" id="resetBtn">
+            <span>↩</span> もう一度
+          </button>
+          <button class="retry-btn" id="retryBtn">
+            <span>✦</span> 別のレシピ
+          </button>
+        </div>
+      </section>
+
+    </main>
+
+    <script src="/recipe/app.js" defer></script>
+  </body>
+</html>

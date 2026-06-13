@@ -2219,10 +2219,100 @@ ${answerFormat}`;
       return;
     }
 
+    if (req.method === "POST" && url.pathname === "/api/recipe/recommend") {
+      const { type, context, instruction, adjustHistory } = await parseBody(req);
+      if (!context) { sendJson(res, 400, { error: "context が必要です。" }); return; }
+      if (!configuredAI(state)) {
+        const err = new Error("AIサービスが設定されていません。設定からAPIキーを入力してください。");
+        err.status = 400;
+        throw err;
+      }
+
+      const systemPrompt = `あなたは料理のプロです。ユーザーの状況（気分・天気・運動量・調理時間）に合わせた最適なレシピを1つ提案してください。
+
+必ず以下のJSONのみで返答してください。余分なテキスト・コードブロック・マークダウンは一切不要です。
+
+{
+  "recipe": {
+    "name": "料理名",
+    "tagline": "この料理の魅力を一言で（20字以内）",
+    "time": "調理時間（例: 約20分）",
+    "difficulty": "easy または medium または hard",
+    "servings": "人数（例: 2人分）",
+    "calories": "カロリー目安（例: 約450kcal）",
+    "mood_message": "この気分・状況に合う理由を一言で（30字以内）",
+    "ingredients": [
+      { "name": "食材名", "amount": "分量", "buy": false }
+    ],
+    "steps": ["手順1", "手順2", "手順3"],
+    "tip": "料理のコツやポイント（任意）"
+  },
+  "drink": null,
+  "pairings": []
+}
+
+お酒リクエストがある場合は drink を以下の形式で：
+{
+  "name": "お酒名",
+  "description": "特徴・おすすめポイント（30字以内）",
+  "glass": "グラスの絵文字1文字",
+  "serving": "飲み方・提供方法（任意）"
+}
+
+手持ちのお酒がある場合は pairings を以下の形式で：
+[{ "drink": "お酒名", "score": 1〜5, "note": "相性の理由（25字以内）" }]
+
+ingredientsの buy フィールド: ユーザーが持っていない可能性が高い食材は true にしてください。`;
+
+      const parts = [];
+      parts.push(`気分: ${context.moodLabel}`);
+      parts.push(`天気: ${context.weatherLabel}`);
+      parts.push(`運動量: ${context.exerciseLabel}`);
+      parts.push(`調理可能時間: ${context.timeLabel}`);
+      if (context.ingredients && context.ingredients.length) {
+        parts.push(`使いたい食材: ${context.ingredients.join("、")}`);
+      }
+      if (context.wantAlcohol) {
+        parts.push("お酒も一緒におすすめしてください。");
+        if (context.alcoholStock && context.alcoholStock.length) {
+          parts.push(`手持ちのお酒: ${context.alcoholStock.join("、")} — それぞれとの相性も教えてください。`);
+        }
+      }
+
+      let userContent = parts.join("\n");
+
+      if (type === "adjust" && instruction) {
+        userContent += `\n\n【調整リクエスト】\n${instruction}`;
+      }
+      if (type === "retry") {
+        userContent += `\n\n【リクエスト】\n同じ条件で全く別のレシピを提案してください。`;
+      }
+      if (adjustHistory && adjustHistory.length) {
+        userContent += `\n\n【これまでの調整履歴】\n${adjustHistory.join("\n")}`;
+      }
+
+      const raw = await jobsAiChat(state, systemPrompt, userContent);
+
+      let parsed;
+      try {
+        const jsonMatch = raw.match(/\{[\s\S]*\}/);
+        parsed = jsonMatch ? JSON.parse(jsonMatch[0]) : null;
+      } catch {
+        parsed = null;
+      }
+      if (!parsed || !parsed.recipe) {
+        sendJson(res, 500, { error: "AIのレスポンスを解析できませんでした。もう一度お試しください。" });
+        return;
+      }
+      sendJson(res, 200, parsed);
+      return;
+    }
+
     if (req.method === "GET") {
       const pathname = url.pathname === "/" ? "/index.html"
         : (url.pathname === "/jobs" || url.pathname === "/jobs/") ? "/jobs/index.html"
         : (url.pathname === "/quiz" || url.pathname === "/quiz/") ? "/quiz/index.html"
+        : (url.pathname === "/recipe" || url.pathname === "/recipe/") ? "/recipe/index.html"
         : url.pathname;
       const safePath = path.normalize(path.join(publicDir, pathname));
       if (!safePath.startsWith(publicDir)) {
