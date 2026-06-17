@@ -132,6 +132,21 @@ def placeholder(s, x, y, w, h, label="スクリーンショット挿入予定"):
     return box
 
 
+def add_image_fit(s, path, x, y, w, h):
+    """アスペクト比を保って枠内に収め、中央配置する"""
+    from PIL import Image as PImage
+    iw, ih = PImage.open(path).size
+    ar = iw / ih
+    br = int(w) / int(h)
+    if ar > br:
+        nw = int(w); nh = int(int(w) / ar)
+    else:
+        nh = int(h); nw = int(int(h) * ar)
+    nx = int(x) + (int(w) - nw) // 2
+    ny = int(y) + (int(h) - nh) // 2
+    return s.shapes.add_picture(path, nx, ny, nw, nh)
+
+
 def codebox(s, x, y, w, h, cmds, title=None):
     box = rect(s, x, y, w, h, fill=CODEBG, shape=MSO_SHAPE.ROUNDED_RECTANGLE)
     box.adjustments[0] = 0.04
@@ -306,10 +321,69 @@ for i, (f, jp) in enumerate(rois):
             [{'text': f, 'size': 12, 'bold': True, 'color': DARK, 'name': MONO}], anchor=MSO_ANCHOR.MIDDLE)
     textbox(s, Inches(4.0), ry, Inches(2.3), Inches(0.4),
             [{'text': jp, 'size': 12, 'color': GRAY}], anchor=MSO_ANCHOR.MIDDLE)
-placeholder(s, Inches(6.7), Inches(1.45), Inches(5.95), Inches(5.4), "ROI Editor / カンデル図のスクショ")
+placeholder(s, Inches(6.7), Inches(1.45), Inches(5.95), Inches(5.4), "ROI Editor 操作画面のスクショ")
 
-# 7. Step4 tckgen
-step_slide("STEP 4", "全脳トラクト生成（tckgen）", "7",
+# ============================================================
+# 7. 塗った領域：5つの ROI（実スクショ・ギャラリー）
+# ============================================================
+import os
+ROI_DIR = os.path.join(os.path.dirname(__file__), '..', 'slides', 'roi_src')
+# (ファイル名, ROI名, 日本語, マーカー色)  上 → 下の解剖順
+roi_gallery = [
+    ("roi_M1_hand_L.png",           "M1_hand_L",           "一次運動野・手領域", RGBColor(0x3B,0x6E,0xF0)),
+    ("roi_Internal_capsule_L.png",  "Internal_capsule_L",  "内包",             RGBColor(0xE0,0x9B,0x3D)),
+    ("roi_Cerebral_peduncle_L.png", "Cerebral_peduncle_L", "大脳脚",           RGBColor(0x2F,0xC2,0xD6)),
+    ("roi_Pons_L.png",              "Pons_L",              "橋",               RGBColor(0x3B,0x6E,0xF0)),
+    ("roi_Medulla_L.png",           "Medulla_L",           "延髄",             RGBColor(0x6A,0x55,0xD0)),
+]
+s = slide(); bg(s, RGBColor(0x0E, 0x16, 0x20))
+rect(s, 0, 0, SW, Inches(1.15), fill=NAVY)
+rect(s, 0, 0, Inches(0.18), SH, fill=CYAN)
+textbox(s, Inches(0.55), 0, Inches(11.5), Inches(1.15),
+        [{'text': '塗った領域：5つの ROI（CST の通過域）', 'size': 28, 'bold': True, 'color': WHITE}],
+        anchor=MSO_ANCHOR.MIDDLE)
+textbox(s, SW - Inches(1.2), Inches(0.32), Inches(0.9), Inches(0.5),
+        [{'text': '7', 'size': 12, 'color': RGBColor(0xAF,0xC6,0xDB)}],
+        align=PP_ALIGN.RIGHT, anchor=MSO_ANCHOR.MIDDLE)
+
+def roi_card(x, y, cw, ch, fname, name, jp, mc):
+    card = rect(s, x, y, cw, ch, fill=RGBColor(0x00,0x00,0x00), line=mc, line_w=Pt(1.5),
+                shape=MSO_SHAPE.ROUNDED_RECTANGLE)
+    card.adjustments[0] = 0.04
+    # ラベル帯
+    lab_h = Inches(0.5)
+    rect(s, x, y, cw, lab_h, fill=mc, shape=MSO_SHAPE.ROUND_2_SAME_RECTANGLE)
+    dot = rect(s, x + Inches(0.14), y + Inches(0.15), Inches(0.2), Inches(0.2),
+               fill=WHITE, shape=MSO_SHAPE.OVAL)
+    textbox(s, x + Inches(0.42), y, cw - Inches(0.5), lab_h,
+            [{'text': name + '   ' + jp, 'size': 12.5, 'bold': True, 'color': WHITE}],
+            anchor=MSO_ANCHOR.MIDDLE)
+    p = os.path.join(ROI_DIR, fname)
+    if os.path.exists(p):
+        add_image_fit(s, p, x + Inches(0.08), y + lab_h + Inches(0.05),
+                      cw - Inches(0.16), ch - lab_h - Inches(0.13))
+
+cw, ch = Inches(4.0), Inches(2.62)
+gx = Inches(0.25)
+# 上段3枚
+y1 = Inches(1.42)
+x0 = Inches(0.42)
+for i in range(3):
+    f, n, jp, mc = roi_gallery[i]
+    roi_card(x0 + i*(cw+gx), y1, cw, ch, f, n, jp, mc)
+# 下段2枚（中央寄せ）
+y2 = Inches(4.22)
+x0b = Emu(int((SW - (2*cw + gx)) / 2))
+for i in range(2):
+    f, n, jp, mc = roi_gallery[3+i]
+    roi_card(x0b + i*(cw+gx), y2, cw, ch, f, n, jp, mc)
+textbox(s, Inches(0.55), Inches(6.95), Inches(12.2), Inches(0.45),
+        [{'text': '※ 各 ROI を mrview の ROI Editor で塗り、<領域>_L.mif として保存（解剖参照：Kandel）。'
+                  '脳幹3領域（大脳脚・橋・延髄）の対応は要確認。',
+          'size': 11, 'color': RGBColor(0x9D,0xB4,0xC8)}], anchor=MSO_ANCHOR.MIDDLE)
+
+# 8. Step4 tckgen
+step_slide("STEP 4", "全脳トラクト生成（tckgen）", "8",
     [("text editor でスクリプト作成", "tckgen_CST_L という名前でコマンドを記述"),
      ("シード", "gmwmSeed_coreg.mif（灰白質-白質境界）から発生"),
      ("ストリームライン数", "-select 1000000（100万本）を生成"),
@@ -320,7 +394,7 @@ step_slide("STEP 4", "全脳トラクト生成（tckgen）", "7",
     ph_label="text editor / コマンド記述のスクショ")
 
 # 8. Step5 tckedit
-step_slide("STEP 5", "ROI で絞り込む（tckedit）", "8",
+step_slide("STEP 5", "ROI で絞り込む（tckedit）", "9",
     [("include で通過条件を指定", "5つの ROI を全て通る神経だけを残す"),
      ("入力", "tracks_10bil.tck（全脳トラクト）"),
      ("出力", "tracks_CST.tck（CST のみ）"),
@@ -333,7 +407,7 @@ step_slide("STEP 5", "ROI で絞り込む（tckedit）", "8",
     ph_label="ターミナル実行のスクショ")
 
 # 9. Step6 可視化①
-step_slide("STEP 6 ①", "可視化：全ての神経", "9",
+step_slide("STEP 6 ①", "可視化：全ての神経", "10",
     [("Tractography を選択", "mrview の Tool → Tractography を開く"),
      ("Run で得た2ファイルを読み込む", "生成したトラクトを表示"),
      ("結果", "脳全体の神経線維（全トラクト）が見える図")],
@@ -341,7 +415,7 @@ step_slide("STEP 6 ①", "可視化：全ての神経", "9",
     ph_label="全トラクト表示のスクショ")
 
 # 10. Step6 可視化②
-step_slide("STEP 6 ②", "可視化：CST のみ", "10",
+step_slide("STEP 6 ②", "可視化：CST のみ", "11",
     [("選んだ領域だけを通る神経を表示", "ROI を全て通過するトラクトのみにチェック"),
      ("結果", "選んだ通過域を通る神経 ＝ CST だけが表示される"),
      ("確認ポイント", "M1 から延髄まで連続して走行しているか")],
