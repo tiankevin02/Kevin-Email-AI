@@ -36,6 +36,11 @@ prs.slide_width  = SW
 prs.slide_height = SH
 BLANK = prs.slide_layouts[6]
 
+import os
+_BASE = os.path.dirname(__file__)
+SHOT_DIR = os.path.join(_BASE, '..', 'slides', 'pdf_shots')   # マニュアルPDF由来のスクショ
+ROI_DIR  = os.path.join(_BASE, '..', 'slides', 'roi_src')     # 塗ったROIスクショ
+
 
 def slide():
     return prs.slides.add_slide(BLANK)
@@ -147,6 +152,25 @@ def add_image_fit(s, path, x, y, w, h):
     return s.shapes.add_picture(path, nx, ny, nw, nh)
 
 
+def shot_panel(s, x, y, w, h, fname, caption=None, dark=True):
+    """スクショ等を暗色カードに収めて配置（無ければプレースホルダ）"""
+    p = os.path.join(SHOT_DIR, fname) if fname else None
+    if p and os.path.exists(p):
+        card = rect(s, x, y, w, h,
+                    fill=RGBColor(0x0A,0x0F,0x16) if dark else WHITE,
+                    line=PH_LN, line_w=Pt(1), shape=MSO_SHAPE.ROUNDED_RECTANGLE)
+        card.adjustments[0] = 0.03
+        cap_h = Inches(0.42) if caption else Inches(0)
+        add_image_fit(s, p, x + Inches(0.1), y + Inches(0.1),
+                      int(w) - int(Inches(0.2)), int(h) - int(Inches(0.2)) - int(cap_h))
+        if caption:
+            textbox(s, x, y + h - cap_h, w, cap_h,
+                    [{'text': caption, 'size': 11.5, 'color': RGBColor(0x9D,0xB4,0xC8),
+                      'align': PP_ALIGN.CENTER}], anchor=MSO_ANCHOR.MIDDLE)
+        return card
+    return placeholder(s, x, y, w, h, caption or "スクリーンショット挿入予定")
+
+
 def codebox(s, x, y, w, h, cmds, title=None):
     box = rect(s, x, y, w, h, fill=CODEBG, shape=MSO_SHAPE.ROUNDED_RECTANGLE)
     box.adjustments[0] = 0.04
@@ -193,21 +217,20 @@ textbox(s, Inches(0.7), Inches(1.5), Inches(6.0), Inches(5.3),
          {'text': '一次運動野 (M1) から脊髄へ運動指令を伝える主要な下行性伝導路。随意運動の中枢で、解剖学的に明確な走行をもつ。', 'size': 16, 'color': DARK, 'space_after': 16, 'line': 1.25},
          {'text': '本資料のゴール', 'size': 22, 'bold': True, 'color': BLUE, 'space_after': 8},
          {'text': '拡散強調画像 (DWI) から CST のみを抽出し、3D トラクトグラフィーとして可視化する一連の手順を再現できるようにする。', 'size': 16, 'color': DARK, 'line': 1.25}])
-# 右側：CSTの走行(通過域)を縦に
-rx = Inches(7.1)
-rect(s, rx, Inches(1.5), Inches(5.5), Inches(5.3), fill=LIGHT, shape=MSO_SHAPE.ROUNDED_RECTANGLE)
-textbox(s, rx, Inches(1.7), Inches(5.5), Inches(0.5),
-        [{'text': 'CST の通過域（上 → 下）', 'size': 16, 'bold': True, 'color': NAVY, 'align': PP_ALIGN.CENTER}])
-regions = ["M1 hand（一次運動野・手領域）", "Internal capsule（内包）",
-           "Cerebral peduncle（大脳脚）", "Pons（橋）", "Medulla（延髄）"]
-for i, r in enumerate(regions):
-    y = Inches(2.35 + 0.78*i)
-    bar = rect(s, rx + Inches(0.4), y, Inches(4.7), Inches(0.6),
-               fill=CYAN if i % 2 == 0 else TEAL, shape=MSO_SHAPE.ROUNDED_RECTANGLE)
-    bar.adjustments[0] = 0.5
-    textbox(s, rx + Inches(0.4), y, Inches(4.7), Inches(0.6),
-            [{'text': r, 'size': 14, 'bold': True, 'color': WHITE, 'align': PP_ALIGN.CENTER}],
-            anchor=MSO_ANCHOR.MIDDLE)
+# 右側：CSTの走行（Kandel 図）
+rx = Inches(7.4)
+rw = Inches(5.4)
+rect(s, rx, Inches(1.5), rw, Inches(5.3), fill=WHITE, line=PH_LN, line_w=Pt(1),
+     shape=MSO_SHAPE.ROUNDED_RECTANGLE)
+textbox(s, rx, Inches(1.62), rw, Inches(0.45),
+        [{'text': 'CST の走行（Kandel 図）', 'size': 15, 'bold': True, 'color': NAVY, 'align': PP_ALIGN.CENTER}])
+add_image_fit(s, os.path.join(SHOT_DIR, 'shot_kandel.png'),
+              rx + Inches(0.15), Inches(2.05), int(rw) - int(Inches(0.3)), int(Inches(4.6)))
+# 通過域ラベル（左テキスト下に補足）
+textbox(s, Inches(0.7), Inches(5.55), Inches(6.2), Inches(1.3),
+        [{'text': 'CST の通過域（上 → 下）', 'size': 14, 'bold': True, 'color': BLUE, 'space_after': 4},
+         {'text': 'M1 hand（一次運動野）→ Internal capsule（内包）→ Midbrain（中脳）'
+                  ' → Pons（橋）→ Medulla（延髄）', 'size': 13, 'color': DARK, 'line': 1.3}])
 
 # ============================================================
 # 3. 全体ワークフロー
@@ -247,7 +270,7 @@ for i, (n, t, d) in enumerate(steps):
 # 共通：手順スライド生成
 # ============================================================
 def step_slide(step, title, idx, bullets, cmds=None, ph_label="スクリーンショット挿入予定",
-               note=None):
+               note=None, shot=None, shot_caption=None):
     s = slide(); bg(s)
     header(s, step, title, idx)
     # 左：説明
@@ -271,8 +294,9 @@ def step_slide(step, title, idx, bullets, cmds=None, ph_label="スクリーン�
     if note:
         textbox(s, lx, Inches(6.55), lw, Inches(0.7),
                 [{'text': '📝 ' + note, 'size': 12, 'italic': True, 'color': GRAY, 'line': 1.15}])
-    # 右：プレースホルダ
-    placeholder(s, Inches(6.7), Inches(1.45), Inches(5.95), Inches(5.4), ph_label)
+    # 右：スクショ（あれば）／プレースホルダ
+    shot_panel(s, Inches(6.7), Inches(1.45), Inches(5.95), Inches(5.4),
+               shot, caption=shot_caption or ph_label)
     return s
 
 # 4. Step1 データ準備
@@ -282,7 +306,8 @@ step_slide("STEP 1", "データ準備（OSF Storage）", "4",
      ("wmfod_norm.mif", "正規化済み白質 FOD（トラクト生成の方向場）"),
      ("T1_coreg.mif", "DWI と位置合わせ済みの T1 構造画像")],
     note="作業ディレクトリ: .../Tutrial/MRI/DWI/CST",
-    ph_label="OSF Storage 画面のスクショ")
+    shot="shot_osf.png",
+    shot_caption="OSF Storage から .mif をダウンロード")
 
 # 5. Step2 mrview
 step_slide("STEP 2", "mrview で表示する", "5",
@@ -292,7 +317,8 @@ step_slide("STEP 2", "mrview で表示する", "5",
     cmds=["cd /Users/.../Tutrial/MRI/DWI/CST",
           "mrview T1_coreg.mif"],
     note="フルパスでファイルを指定して mrview を起動する。",
-    ph_label="mrview / overlay のスクショ")
+    shot="shot_mrview_t1.png",
+    shot_caption="mrview で T1_coreg.mif を表示")
 
 # 6. Step3 ROI
 s = slide(); bg(s)
@@ -306,8 +332,8 @@ textbox(s, Inches(0.7), Inches(1.45), Inches(5.7), Inches(3.8),
      {'text': '     Kandel『Principles of Neural Science』の図を参照して位置決め', 'size': 14, 'color': DARK, 'line': 1.2}])
 # ROIテーブル
 ty = Inches(4.55)
-rois = [("Medulla_L", "延髄"), ("Pons_L", "橋"), ("Cerebral_peduncle_L", "大脳脚"),
-        ("Internal_capsule_L", "内包"), ("M1_hand_L", "一次運動野(手)")]
+rois = [("M1_hand_L", "一次運動野(手)"), ("Internal_capsule_L", "内包"),
+        ("Midbrain_L", "中脳"), ("Pons_L", "橋"), ("Medulla_L", "延髄")]
 rect(s, Inches(0.7), ty, Inches(5.7), Inches(0.45), fill=NAVY)
 textbox(s, Inches(0.8), ty, Inches(3.0), Inches(0.45),
         [{'text': 'ROI ファイル名', 'size': 13, 'bold': True, 'color': WHITE}], anchor=MSO_ANCHOR.MIDDLE)
@@ -321,106 +347,106 @@ for i, (f, jp) in enumerate(rois):
             [{'text': f, 'size': 12, 'bold': True, 'color': DARK, 'name': MONO}], anchor=MSO_ANCHOR.MIDDLE)
     textbox(s, Inches(4.0), ry, Inches(2.3), Inches(0.4),
             [{'text': jp, 'size': 12, 'color': GRAY}], anchor=MSO_ANCHOR.MIDDLE)
-placeholder(s, Inches(6.7), Inches(1.45), Inches(5.95), Inches(5.4), "ROI Editor 操作画面のスクショ")
+shot_panel(s, Inches(6.7), Inches(1.45), Inches(5.95), Inches(5.4),
+           "shot_roi_editor.png", caption="mrview の ROI Editor（右に5つのROIを保存）")
 
 # ============================================================
-# 7. 塗った領域：5つの ROI（実スクショ・ギャラリー）
+# 7〜11. 塗った領域：5つの ROI（実スクショを1枚ずつ大きく）
 # ============================================================
-import os
-ROI_DIR = os.path.join(os.path.dirname(__file__), '..', 'slides', 'roi_src')
-# (ファイル名, ROI名, 日本語, マーカー色)  上 → 下の解剖順
-roi_gallery = [
-    ("roi_M1_hand_L.png",           "M1_hand_L",           "一次運動野・手領域", RGBColor(0x3B,0x6E,0xF0)),
-    ("roi_Internal_capsule_L.png",  "Internal_capsule_L",  "内包",             RGBColor(0xE0,0x9B,0x3D)),
-    ("roi_Cerebral_peduncle_L.png", "Cerebral_peduncle_L", "大脳脚",           RGBColor(0x2F,0xC2,0xD6)),
-    ("roi_Pons_L.png",              "Pons_L",              "橋",               RGBColor(0x3B,0x6E,0xF0)),
-    ("roi_Medulla_L.png",           "Medulla_L",           "延髄",             RGBColor(0x6A,0x55,0xD0)),
+# (画像ファイル, ROIファイル名, 日本語, マーカー色, CST上での役割)  上 → 下の解剖順
+roi_slides = [
+    ("roi_M1_hand_L.png",          "M1_hand_L.mif",          "一次運動野・手領域", "M1 hand",
+     RGBColor(0x3B,0x6E,0xF0), "CST の起始（最上流）。手の運動を司る皮質。"),
+    ("roi_Internal_capsule_L.png", "Internal_capsule_L.mif", "内包",            "Internal capsule",
+     RGBColor(0xE0,0x9B,0x3D), "大脳深部の白質路。後脚を CST が通る。"),
+    ("roi_Midbrain_L.png",         "Midbrain_L.mif",         "中脳",            "Midbrain",
+     RGBColor(0x2F,0xC2,0xD6), "中脳レベルの通過域（大脳脚を含む）。"),
+    ("roi_Pons_L.png",             "Pons_L.mif",             "橋",              "Pons",
+     RGBColor(0x4F,0x8B,0xF5), "脳幹（橋）の通過域。"),
+    ("roi_Medulla_L.png",          "Medulla_L.mif",          "延髄",            "Medulla",
+     RGBColor(0x8A,0x6B,0xE0), "脳幹下端（最下流）。錐体交叉の手前。"),
 ]
-s = slide(); bg(s, RGBColor(0x0E, 0x16, 0x20))
-rect(s, 0, 0, SW, Inches(1.15), fill=NAVY)
-rect(s, 0, 0, Inches(0.18), SH, fill=CYAN)
-textbox(s, Inches(0.55), 0, Inches(11.5), Inches(1.15),
-        [{'text': '塗った領域：5つの ROI（CST の通過域）', 'size': 28, 'bold': True, 'color': WHITE}],
-        anchor=MSO_ANCHOR.MIDDLE)
-textbox(s, SW - Inches(1.2), Inches(0.32), Inches(0.9), Inches(0.5),
-        [{'text': '7', 'size': 12, 'color': RGBColor(0xAF,0xC6,0xDB)}],
-        align=PP_ALIGN.RIGHT, anchor=MSO_ANCHOR.MIDDLE)
-
-def roi_card(x, y, cw, ch, fname, name, jp, mc):
-    card = rect(s, x, y, cw, ch, fill=RGBColor(0x00,0x00,0x00), line=mc, line_w=Pt(1.5),
-                shape=MSO_SHAPE.ROUNDED_RECTANGLE)
-    card.adjustments[0] = 0.04
-    # ラベル帯
-    lab_h = Inches(0.5)
-    rect(s, x, y, cw, lab_h, fill=mc, shape=MSO_SHAPE.ROUND_2_SAME_RECTANGLE)
-    dot = rect(s, x + Inches(0.14), y + Inches(0.15), Inches(0.2), Inches(0.2),
-               fill=WHITE, shape=MSO_SHAPE.OVAL)
-    textbox(s, x + Inches(0.42), y, cw - Inches(0.5), lab_h,
-            [{'text': name + '   ' + jp, 'size': 12.5, 'bold': True, 'color': WHITE}],
+circ = ["①", "②", "③", "④", "⑤"]
+for k, (img, fname, jp, en, mc, role) in enumerate(roi_slides):
+    s = slide(); bg(s, RGBColor(0x0B, 0x11, 0x1A))
+    rect(s, 0, 0, SW, Inches(1.05), fill=NAVY)
+    rect(s, 0, 0, Inches(0.18), SH, fill=mc)
+    textbox(s, Inches(0.55), 0, Inches(10.5), Inches(1.05),
+            [{'text': f'{circ[k]} {jp}（{en}）', 'size': 30, 'bold': True, 'color': WHITE}],
             anchor=MSO_ANCHOR.MIDDLE)
-    p = os.path.join(ROI_DIR, fname)
+    textbox(s, SW - Inches(1.3), Inches(0.28), Inches(1.0), Inches(0.5),
+            [{'text': str(7 + k), 'size': 12, 'color': RGBColor(0xAF,0xC6,0xDB)}],
+            align=PP_ALIGN.RIGHT, anchor=MSO_ANCHOR.MIDDLE)
+    # 大きな画像（黒カード＋色枠）
+    ix, iy, iw, ih = Inches(0.45), Inches(1.25), Inches(8.7), Inches(6.05)
+    card = rect(s, ix, iy, iw, ih, fill=RGBColor(0x00,0x00,0x00), line=mc, line_w=Pt(2),
+                shape=MSO_SHAPE.ROUNDED_RECTANGLE)
+    card.adjustments[0] = 0.02
+    p = os.path.join(ROI_DIR, img)
     if os.path.exists(p):
-        add_image_fit(s, p, x + Inches(0.08), y + lab_h + Inches(0.05),
-                      cw - Inches(0.16), ch - lab_h - Inches(0.13))
+        add_image_fit(s, p, ix + Inches(0.12), iy + Inches(0.12),
+                      int(iw) - int(Inches(0.24)), int(ih) - int(Inches(0.24)))
+    # 右：情報パネル
+    px = Inches(9.4); pw = Inches(3.5)
+    panel = rect(s, px, Inches(1.45), pw, Inches(5.6), fill=RGBColor(0x16,0x22,0x33),
+                 shape=MSO_SHAPE.ROUNDED_RECTANGLE)
+    panel.adjustments[0] = 0.05
+    rect(s, px + Inches(0.35), Inches(1.85), Inches(0.45), Inches(0.45), fill=mc,
+         shape=MSO_SHAPE.OVAL)
+    textbox(s, px + Inches(0.95), Inches(1.85), pw - Inches(1.1), Inches(0.45),
+            [{'text': 'ROI マーカー色', 'size': 12, 'color': RGBColor(0xCF,0xDD,0xEA)}],
+            anchor=MSO_ANCHOR.MIDDLE)
+    textbox(s, px + Inches(0.35), Inches(2.6), pw - Inches(0.6), Inches(4.2),
+            [{'text': 'ファイル名', 'size': 12, 'bold': True, 'color': mc, 'space_after': 3},
+             {'text': fname, 'size': 13, 'color': WHITE, 'name': MONO, 'space_after': 16},
+             {'text': 'CST 上の位置', 'size': 12, 'bold': True, 'color': mc, 'space_after': 3},
+             {'text': f'{k+1} / 5　（上から{k+1}番目）', 'size': 13, 'color': WHITE, 'space_after': 16},
+             {'text': '役割', 'size': 12, 'bold': True, 'color': mc, 'space_after': 3},
+             {'text': role, 'size': 13, 'color': WHITE, 'line': 1.3}])
 
-cw, ch = Inches(4.0), Inches(2.62)
-gx = Inches(0.25)
-# 上段3枚
-y1 = Inches(1.42)
-x0 = Inches(0.42)
-for i in range(3):
-    f, n, jp, mc = roi_gallery[i]
-    roi_card(x0 + i*(cw+gx), y1, cw, ch, f, n, jp, mc)
-# 下段2枚（中央寄せ）
-y2 = Inches(4.22)
-x0b = Emu(int((SW - (2*cw + gx)) / 2))
-for i in range(2):
-    f, n, jp, mc = roi_gallery[3+i]
-    roi_card(x0b + i*(cw+gx), y2, cw, ch, f, n, jp, mc)
-textbox(s, Inches(0.55), Inches(6.95), Inches(12.2), Inches(0.45),
-        [{'text': '※ 各 ROI を mrview の ROI Editor で塗り、<領域>_L.mif として保存（解剖参照：Kandel）。'
-                  '脳幹3領域（大脳脚・橋・延髄）の対応は要確認。',
-          'size': 11, 'color': RGBColor(0x9D,0xB4,0xC8)}], anchor=MSO_ANCHOR.MIDDLE)
-
-# 8. Step4 tckgen
-step_slide("STEP 4", "全脳トラクト生成（tckgen）", "8",
+# 12. Step4 tckgen
+step_slide("STEP 4", "全脳トラクト生成（tckgen）", "12",
     [("text editor でスクリプト作成", "tckgen_CST_L という名前でコマンドを記述"),
      ("シード", "gmwmSeed_coreg.mif（灰白質-白質境界）から発生"),
      ("ストリームライン数", "-select 1000000（100万本）を生成"),
      ("出力", "tracks_10bil.tck（全脳トラクト）")],
     cmds=["tckgen gmwmSeed_coreg.mif -select 1000000 \\",
           "       wmfod_norm.mif tracks_10bil.tck"],
-    note="まずは全脳のストリームラインをまとめて生成しておく。",
-    ph_label="text editor / コマンド記述のスクショ")
+    note="入力の方向場 wmfod_norm.mif（下のスクショ）から発生させる。",
+    shot="shot_mrview_overlay.png",
+    shot_caption="入力FOD：wmfod_norm.mif を T1 に overlay")
 
-# 8. Step5 tckedit
-step_slide("STEP 5", "ROI で絞り込む（tckedit）", "9",
+# 13. Step5 tckedit
+step_slide("STEP 5", "ROI で絞り込む（tckedit）", "13",
     [("include で通過条件を指定", "5つの ROI を全て通る神経だけを残す"),
      ("入力", "tracks_10bil.tck（全脳トラクト）"),
      ("出力", "tracks_CST.tck（CST のみ）"),
      ("実行", "bash でスクリプトを指定して走らせる")],
-    cmds=["tckedit -include Medulla_L.mif -include Pons_L.mif \\",
-          "  -include Cerebral_peduncle_L.mif \\",
-          "  -include Internal_capsule_L.mif -include M1_hand_L.mif \\",
+    cmds=["tckedit -include M1_hand_L.mif -include Internal_capsule_L.mif \\",
+          "  -include Midbrain_L.mif -include Pons_L.mif \\",
+          "  -include Medulla_L.mif \\",
           "  tracks_10bil.tck tracks_CST.tck",
           "bash .../CST/tckgen_CST_L.sh"],
-    ph_label="ターミナル実行のスクショ")
+    shot="shot_roi_files.png",
+    shot_caption="include する5つの ROI ファイル（Midbrain_L.mif 等）")
 
-# 9. Step6 可視化①
-step_slide("STEP 6 ①", "可視化：全ての神経", "10",
+# 14. Step6 可視化①
+step_slide("STEP 6 ①", "可視化：全ての神経", "14",
     [("Tractography を選択", "mrview の Tool → Tractography を開く"),
-     ("Run で得た2ファイルを読み込む", "生成したトラクトを表示"),
+     ("Run で得た2ファイルを読み込む", "tracks_10bil.tck / tracks_CST.tck を選択"),
      ("結果", "脳全体の神経線維（全トラクト）が見える図")],
     note="まずは絞り込み前の全神経を確認する。",
-    ph_label="全トラクト表示のスクショ")
+    shot="shot_tracto_all.png",
+    shot_caption="全ての神経が見える図（方向色つき）")
 
-# 10. Step6 可視化②
-step_slide("STEP 6 ②", "可視化：CST のみ", "11",
+# 15. Step6 可視化②
+step_slide("STEP 6 ②", "可視化：CST のみ", "15",
     [("選んだ領域だけを通る神経を表示", "ROI を全て通過するトラクトのみにチェック"),
      ("結果", "選んだ通過域を通る神経 ＝ CST だけが表示される"),
      ("確認ポイント", "M1 から延髄まで連続して走行しているか")],
     note="tracks_CST.tck を読み込むと CST のみが描出される。",
-    ph_label="CST のみ表示のスクショ")
+    shot="shot_tracto_dialog.png",
+    shot_caption="Tractography で2ファイルを選択（tracks_CST.tck）")
 
 # ============================================================
 # 11. まとめ & 次のステップ（壁打ち）
@@ -438,11 +464,12 @@ box = rect(s, Inches(7.0), Inches(1.7), Inches(5.6), Inches(5.0), fill=RGBColor(
            shape=MSO_SHAPE.ROUNDED_RECTANGLE)
 box.adjustments[0] = 0.04
 textbox(s, Inches(7.3), Inches(1.95), Inches(5.0), Inches(4.6),
-        [{'text': '🛠 壁打ちポイント（要確認）', 'size': 18, 'bold': True, 'color': CYAN, 'space_after': 12},
-         {'text': '・スクショ差し込み：別ファイルの全スクリーンショットを各手順へ配置（プレースホルダ枠を用意済み）', 'size': 14, 'color': WHITE, 'space_after': 10, 'line': 1.25},
-         {'text': '・左右の別：今回は _L（左）。右側 CST も作るか？', 'size': 14, 'color': WHITE, 'space_after': 10, 'line': 1.25},
-         {'text': '・コマンドの正確なオプション（mask/角度閾値等）を追記するか', 'size': 14, 'color': WHITE, 'space_after': 10, 'line': 1.25},
-         {'text': '・対象者/発表時間に合わせて枚数・粒度を調整', 'size': 14, 'color': WHITE, 'line': 1.25}])
+        [{'text': '🛠 壁打ちポイント', 'size': 18, 'bold': True, 'color': CYAN, 'space_after': 12},
+         {'text': '✓ スクショ反映済：OSF / mrview / ROI Editor / 端末 / Tractography をPDFから抽出', 'size': 13.5, 'color': WHITE, 'space_after': 9, 'line': 1.25},
+         {'text': '✓ 中脳（Midbrain_L）に修正済（旧 Cerebral peduncle）', 'size': 13.5, 'color': WHITE, 'space_after': 9, 'line': 1.25},
+         {'text': '✓ 5つの ROI を1枚ずつ大きく掲載', 'size': 13.5, 'color': WHITE, 'space_after': 9, 'line': 1.25},
+         {'text': '・左右の別：今回は _L（左）。右側 CST も作るか？', 'size': 13.5, 'color': RGBColor(0xCF,0xDD,0xEA), 'space_after': 9, 'line': 1.25},
+         {'text': '・CST のみの最終トラクト像が出たら差し替え', 'size': 13.5, 'color': RGBColor(0xCF,0xDD,0xEA), 'line': 1.25}])
 
 import os
 out = os.path.join(os.path.dirname(__file__), '..', 'slides', 'CST_tractography_slides.pptx')
