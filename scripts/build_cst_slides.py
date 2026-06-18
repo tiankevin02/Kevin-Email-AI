@@ -468,8 +468,45 @@ textbox(s, Inches(7.3), Inches(1.95), Inches(5.0), Inches(4.6),
          {'text': '✓ スクショ反映済：OSF / mrview / ROI Editor / 端末 / Tractography をPDFから抽出', 'size': 13.5, 'color': WHITE, 'space_after': 9, 'line': 1.25},
          {'text': '✓ 中脳（Midbrain_L）に修正済（旧 Cerebral peduncle）', 'size': 13.5, 'color': WHITE, 'space_after': 9, 'line': 1.25},
          {'text': '✓ 5つの ROI を1枚ずつ大きく掲載', 'size': 13.5, 'color': WHITE, 'space_after': 9, 'line': 1.25},
-         {'text': '・左右の別：今回は _L（左）。右側 CST も作るか？', 'size': 13.5, 'color': RGBColor(0xCF,0xDD,0xEA), 'space_after': 9, 'line': 1.25},
-         {'text': '・CST のみの最終トラクト像が出たら差し替え', 'size': 13.5, 'color': RGBColor(0xCF,0xDD,0xEA), 'line': 1.25}])
+         {'text': '✓ CST の最終3Dトラクト像を掲載（最終スライド）', 'size': 13.5, 'color': WHITE, 'space_after': 9, 'line': 1.25},
+         {'text': '・左右の別：今回は _L（左）。右側 CST も作るか？', 'size': 13.5, 'color': RGBColor(0xCF,0xDD,0xEA), 'line': 1.25}])
+
+# ============================================================
+# 17. 完成：CST の3Dトラクトグラフィー（最終スライド）
+# ============================================================
+s = slide(); bg(s)
+rect(s, 0, 0, SW, Inches(1.05), fill=NAVY)
+rect(s, 0, 0, Inches(0.18), SH, fill=CYAN)
+textbox(s, Inches(0.55), 0, Inches(11.0), Inches(1.05),
+        [{'text': '完成：これが CST です（3D トラクトグラフィー）', 'size': 28, 'bold': True, 'color': WHITE}],
+        anchor=MSO_ANCHOR.MIDDLE)
+textbox(s, SW - Inches(1.3), Inches(0.28), Inches(1.0), Inches(0.5),
+        [{'text': '17', 'size': 12, 'color': RGBColor(0xAF,0xC6,0xDB)}],
+        align=PP_ALIGN.RIGHT, anchor=MSO_ANCHOR.MIDDLE)
+# 大きな画像（白カード＋シアン枠）
+ix, iy, iw, ih = Inches(0.45), Inches(1.25), Inches(8.9), Inches(6.05)
+card = rect(s, ix, iy, iw, ih, fill=WHITE, line=CYAN, line_w=Pt(2.5),
+            shape=MSO_SHAPE.ROUNDED_RECTANGLE)
+card.adjustments[0] = 0.02
+_p = os.path.join(SHOT_DIR, 'shot_cst_3d.png')
+if os.path.exists(_p):
+    add_image_fit(s, _p, ix + Inches(0.12), iy + Inches(0.12),
+                  int(iw) - int(Inches(0.24)), int(ih) - int(Inches(0.24)))
+# 右：説明パネル
+px = Inches(9.55); pw = Inches(3.35)
+panel = rect(s, px, Inches(1.45), pw, Inches(5.6), fill=LIGHT,
+             shape=MSO_SHAPE.ROUNDED_RECTANGLE)
+panel.adjustments[0] = 0.05
+textbox(s, px + Inches(0.3), Inches(1.7), pw - Inches(0.6), Inches(5.1),
+        [{'text': 'CST（皮質脊髄路）', 'size': 17, 'bold': True, 'color': BLUE, 'space_after': 8},
+         {'text': '塗った5つの ROI を全て通過する神経線維だけを3Dで描出。', 'size': 13.5, 'color': DARK, 'space_after': 14, 'line': 1.3},
+         {'text': '通過する ROI（上 → 下）', 'size': 13, 'bold': True, 'color': NAVY, 'space_after': 6},
+         {'text': '① M1 hand（一次運動野）', 'size': 13, 'color': DARK, 'space_after': 3},
+         {'text': '② Internal capsule（内包）', 'size': 13, 'color': DARK, 'space_after': 3},
+         {'text': '③ Midbrain（中脳）', 'size': 13, 'color': DARK, 'space_after': 3},
+         {'text': '④ Pons（橋）', 'size': 13, 'color': DARK, 'space_after': 3},
+         {'text': '⑤ Medulla（延髄）', 'size': 13, 'color': DARK, 'space_after': 14},
+         {'text': 'ファイル: tracks_CST.tck', 'size': 12, 'color': GRAY, 'name': MONO}])
 
 import os
 out = os.path.join(os.path.dirname(__file__), '..', 'slides', 'CST_tractography_slides.pptx')
